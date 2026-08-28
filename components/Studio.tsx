@@ -18,7 +18,7 @@ import { Environment, Lightformer } from "@react-three/drei";
 export function Studio({ spotIntensity }: { spotIntensity: number }) {
   return (
     <>
-      <ambientLight intensity={0.05} />
+      <ambientLight intensity={0.03} />
 
       <spotLight
         position={[4.5, 5, 6.5]}
@@ -26,30 +26,34 @@ export function Studio({ spotIntensity }: { spotIntensity: number }) {
         penumbra={0.9}
         intensity={spotIntensity}
         color="#fff3e4"
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-bias={-0.0005}
-        shadow-normalBias={0.02}
       />
       <spotLight
         position={[-5.5, -2.5, 4]}
         angle={0.6}
         penumbra={1}
-        intensity={spotIntensity * 0.4}
+        intensity={spotIntensity * 0.35}
         color="#8fb2ff"
       />
 
-      <Environment resolution={256} frames={1}>
+      {/* Panels are deliberately narrow with wide black gaps between them: the
+          gaps are what give polished metal its dark-to-mirror contrast. */}
+      <Environment resolution={512} frames={1}>
         {/* Key softbox, upper left. */}
-        <Lightformer form="rect" intensity={6} scale={[7, 7, 1]} position={[-4.5, 3, 5]} color="#ffffff" />
-        {/* Cool fill, lower right. */}
-        <Lightformer form="rect" intensity={1.8} scale={[5, 8, 1]} position={[5, -1.5, 3.5]} color="#c2d8ff" />
-        {/* Overhead strip — the long highlight that travels across the rim. */}
-        <Lightformer form="rect" intensity={4} scale={[12, 1.4, 1]} position={[0, 6, 1]} color="#ffffff" />
-        {/* Warm kicker behind the subject. */}
-        <Lightformer form="ring" intensity={5} scale={4} position={[3.5, 2, -6]} color="#ffd6a5" />
-        {/* Cool edge kicker on the opposite side. */}
-        <Lightformer form="rect" intensity={2.5} scale={[1.6, 8, 1]} position={[-6, 0, -3]} color="#9dc0ff" />
+        <Lightformer form="rect" intensity={14} scale={[2.6, 2.6, 1]} position={[-4, 3, 4]} color="#ffffff" />
+        {/* Long overhead strip — the highlight that sweeps across the rim. */}
+        <Lightformer form="rect" intensity={7} scale={[9, 0.6, 1]} position={[0, 4.5, 1.5]} color="#ffffff" />
+        {/* Narrow cool strip catching the right edge. */}
+        <Lightformer form="rect" intensity={4} scale={[0.7, 5, 1]} position={[5, 0, 2.5]} color="#bcd4ff" />
+        {/* Small fill panel keeping the shadow side of the rim off pure black. */}
+        <Lightformer form="rect" intensity={5} scale={[1.2, 3.5, 1]} position={[3.5, 1.5, 3.5]} color="#fff0dd" />
+        {/* Narrow warm strip catching the left edge. */}
+        <Lightformer form="rect" intensity={3} scale={[0.6, 4, 1]} position={[-5.5, -1, 1]} color="#ffd0a0" />
+        {/* Big, dim fill card on the camera axis. Without it every surface that
+            faces the lens — the star emblem, the flat enamel fields — reflects
+            nothing but the black room and reads as a silhouette. */}
+        <Lightformer form="rect" intensity={1.1} scale={[18, 18, 1]} position={[0, 1, 6]} color="#dbe6ff" />
+        {/* Warm kicker behind the subject, seen in the rim's outer bevel. */}
+        <Lightformer form="ring" intensity={4} scale={3} position={[3, 2, -5]} color="#ffcf9a" />
       </Environment>
     </>
   );

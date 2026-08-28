@@ -38,6 +38,14 @@ export const BACK_Z = -RIM_FRONT + 0.025;
 /** The back plate is tucked inside the rim wall so no faces are coplanar. */
 export const BACK_INSET = 0.025;
 
+/**
+ * `toCreasedNormals` buckets vertices on a fixed 0.01 world-unit grid. A pin is
+ * only ~2.2 units across, so at native scale it merges neighbouring rim
+ * vertices that are not actually the same point and the normals come out
+ * scalloped. Creasing is therefore done on a temporarily enlarged copy.
+ */
+const CREASE_SCALE = 50;
+
 export type ExtrudeOptions = {
   depth: number;
   bevel: number;
@@ -48,12 +56,16 @@ export type ExtrudeOptions = {
 
 /**
  * Extrudes a shape, centres it on z = 0 and re-computes normals with a crease
- * angle so that curved walls stay smooth while bevel edges stay razor sharp —
- * that contrast is what makes the rims catch the light.
+ * angle so that curved walls stay smooth while the bevel stays a crisp faceted
+ * chamfer — that contrast is what makes the rims catch the light.
+ *
+ * The default 60° crease angle smooths the whole bevel profile into a polished
+ * radius — the way a die-struck rim actually looks — while anything sharper
+ * than 60°, such as the points of the star emblem, stays crisp.
  */
 export function extrudeCentered(
   shape: Shape | Shape[],
-  { depth, bevel, curveSegments = 64, bevelSegments = 4, creaseAngle = Math.PI / 7 }: ExtrudeOptions,
+  { depth, bevel, curveSegments = 64, bevelSegments = 5, creaseAngle = Math.PI / 3 }: ExtrudeOptions,
 ): BufferGeometry {
   const geometry = new ExtrudeGeometry(shape, {
     depth,
@@ -65,8 +77,13 @@ export function extrudeCentered(
     bevelSegments,
   });
   geometry.translate(0, 0, -depth / 2);
+  geometry.scale(CREASE_SCALE, CREASE_SCALE, CREASE_SCALE);
+
   const creased = toCreasedNormals(geometry, creaseAngle);
-  geometry.dispose();
+  if (creased !== geometry) geometry.dispose();
+
+  const inverse = 1 / CREASE_SCALE;
+  creased.scale(inverse, inverse, inverse);
   creased.computeBoundingSphere();
   return creased;
 }

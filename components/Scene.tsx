@@ -2,8 +2,9 @@
 
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { OrbitControls } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { Bloom, EffectComposer } from "@react-three/postprocessing";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Bloom, EffectComposer, ToneMapping } from "@react-three/postprocessing";
+import { ToneMappingMode } from "postprocessing";
 import { Leva, useControls } from "leva";
 import type { Group } from "three";
 import { Badge, BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
@@ -23,6 +24,14 @@ function PinStage({ speed, children }: { speed: number; children: React.ReactNod
   });
 
   return <group ref={group}>{children}</group>;
+}
+
+function DebugBridge() {
+  const three = useThree();
+  useEffect(() => {
+    (window as unknown as { __three: unknown }).__three = three;
+  }, [three]);
+  return null;
 }
 
 export default function Scene() {
@@ -45,17 +54,17 @@ export default function Scene() {
     enamelColor: BADGE_PRESETS.circle.enamelColor,
     enamelRoughness: { value: 0.22, min: 0.02, max: 0.8, step: 0.01 },
     clearcoat: { value: 1, min: 0, max: 1, step: 0.01 },
-    clearcoatRoughness: { value: 0.04, min: 0, max: 0.5, step: 0.005 },
+    clearcoatRoughness: { value: 0.06, min: 0, max: 0.5, step: 0.005 },
     metalRoughness: { value: 0.12, min: 0.01, max: 0.8, step: 0.01 },
     metalness: { value: 1, min: 0, max: 1, step: 0.01 },
-    envMapIntensity: { value: 1.35, min: 0, max: 4, step: 0.05 },
+    envMapIntensity: { value: 1.8, min: 0, max: 4, step: 0.05 },
   }));
 
   const { bloomIntensity, bloomThreshold, autoRotateSpeed, spotIntensity } = useControls("Scene", {
     bloomIntensity: { value: 0.7, min: 0, max: 3, step: 0.05 },
     bloomThreshold: { value: 0.72, min: 0, max: 1.5, step: 0.01 },
     autoRotateSpeed: { value: 0.35, min: 0, max: 2, step: 0.01 },
-    spotIntensity: { value: 90, min: 0, max: 300, step: 1 },
+    spotIntensity: { value: 45, min: 0, max: 300, step: 1 },
   });
 
   // Each pin ships with its own signature enamel colour; switching variants
@@ -95,6 +104,7 @@ export default function Scene() {
       >
         <color attach="background" args={["#000000"]} />
 
+        <DebugBridge />
         <Suspense fallback={null}>
           <Studio spotIntensity={spotIntensity} />
           <PinMaterialProvider value={materials}>
@@ -121,6 +131,9 @@ export default function Scene() {
             mipmapBlur
             radius={0.75}
           />
+          {/* EffectComposer turns the renderer's tone mapping off, so the curve
+              has to be re-applied here or every highlight clips to flat white. */}
+          <ToneMapping mode={ToneMappingMode.NEUTRAL} />
         </EffectComposer>
       </Canvas>
       <Leva collapsed={false} />
