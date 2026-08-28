@@ -3,18 +3,21 @@
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Bloom, EffectComposer, ToneMapping } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, ToneMapping, wrapEffect } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { button, Leva, useControls } from "leva";
-import { Color } from "three";
 import type { Group } from "three";
-import type { DissolveAppearanceUniforms } from "../lib/dissolve";
-import { Badge, BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
+import { DreamBlurEffect } from "../lib/dreamBlur";
+import { BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
 import type { BadgeVariant } from "./badges";
 import type { PinMaterialSettings } from "./badges/materials";
-import { DissolveInstance } from "./DissolveInstance";
+import { BadgeTransition } from "./BadgeTransition";
+import type { TransitionSettings } from "./BadgeTransition";
 import { Studio } from "./Studio";
-import { useBadgeTransition } from "./useBadgeTransition";
+
+// Registered once at module scope so the component identity stays stable and
+// the effect instance is never rebuilt behind the composer's back.
+const DreamBlur = wrapEffect(DreamBlurEffect);
 
 /**
  * Gentle idle sway — the badge never turns its back to the camera, it just
@@ -61,18 +64,37 @@ export default function Scene() {
   }));
 
   const replayRef = useRef<() => void>(() => {});
-  const { duration, stagger, noiseScale, edgeWidth, edgeColor, edgeIntensity } = useControls(
-    "Transition",
-    {
-      duration: { value: 0.9, min: 0.2, max: 3, step: 0.05 },
-      stagger: { value: 0.3, min: 0, max: 1.5, step: 0.05 },
-      noiseScale: { value: 3, min: 0.5, max: 12, step: 0.1 },
-      edgeWidth: { value: 0.06, min: 0.005, max: 0.25, step: 0.005 },
-      edgeColor: "#ff9a3c",
-      edgeIntensity: { value: 7, min: 0, max: 30, step: 0.5 },
-      replay: button(() => replayRef.current()),
-    },
-  );
+  const {
+    duration,
+    particleCount,
+    particleSize,
+    drift,
+    turbulence,
+    lift,
+    stagger,
+    glow,
+    blur,
+    blurRadius,
+    halation,
+    erodeScale,
+    erodeSoftness,
+  } = useControls("Transition", {
+    duration: { value: 1.6, min: 0.4, max: 3.5, step: 0.05 },
+    // Upper bound is the cloud's pre-allocated MAX_PARTICLES.
+    particleCount: { value: 3500, min: 400, max: 8000, step: 100 },
+    particleSize: { value: 0.03, min: 0.004, max: 0.09, step: 0.002 },
+    drift: { value: 0.45, min: 0, max: 1.5, step: 0.01 },
+    turbulence: { value: 0.28, min: 0, max: 1, step: 0.01 },
+    lift: { value: 0.22, min: 0, max: 0.9, step: 0.01 },
+    stagger: { value: 0.45, min: 0, max: 0.85, step: 0.01 },
+    glow: { value: 2.2, min: 0, max: 8, step: 0.05 },
+    blur: { value: 0.7, min: 0, max: 1, step: 0.01 },
+    blurRadius: { value: 14, min: 2, max: 40, step: 0.5 },
+    halation: { value: 0.35, min: 0, max: 1.5, step: 0.01 },
+    erodeScale: { value: 2.2, min: 0.4, max: 8, step: 0.1 },
+    erodeSoftness: { value: 0.22, min: 0.02, max: 0.6, step: 0.01 },
+    replay: button(() => replayRef.current()),
+  });
 
   const { bloomIntensity, bloomThreshold, autoRotateSpeed, spotIntensity } = useControls("Scene", {
     bloomIntensity: { value: 0.55, min: 0, max: 3, step: 0.05 },
@@ -82,7 +104,9 @@ export default function Scene() {
   });
 
   // Each pin ships with its own signature enamel colour; switching variants
-  // re-seeds the picker instead of dragging the previous colour along.
+  // re-seeds the picker instead of dragging the previous colour along. The
+  // badge that is leaving keeps its old colour — the transition freezes a
+  // snapshot of these settings for it.
   useEffect(() => {
     setMaterials({ enamelColor: BADGE_PRESETS[variant].enamelColor });
   }, [variant, setMaterials]);
@@ -108,23 +132,42 @@ export default function Scene() {
     ],
   );
 
-  const { instances, onExited, replay } = useBadgeTransition(variant, materials, stagger);
-  replayRef.current = replay;
-
-  // The look uniforms are shared by reference with every patched material, so
-  // leva edits are plain mutations — no material rebuilds, no re-compiles.
-  const dissolveAppearance = useMemo<DissolveAppearanceUniforms>(
+  const transition = useMemo<TransitionSettings>(
     () => ({
-      uDissolveNoiseScale: { value: 3 },
-      uDissolveEdgeWidth: { value: 0.06 },
-      uDissolveEdgeColor: { value: new Color("#ff9a3c") },
+      duration,
+      particleCount,
+      particleSize,
+      drift,
+      turbulence,
+      lift,
+      stagger,
+      glow,
+      blur,
+      blurRadius,
+      halation,
+      erodeScale,
+      erodeSoftness,
     }),
-    [],
+    [
+      duration,
+      particleCount,
+      particleSize,
+      drift,
+      turbulence,
+      lift,
+      stagger,
+      glow,
+      blur,
+      blurRadius,
+      halation,
+      erodeScale,
+      erodeSoftness,
+    ],
   );
-  dissolveAppearance.uDissolveNoiseScale.value = noiseScale;
-  dissolveAppearance.uDissolveEdgeWidth.value = edgeWidth;
-  // HDR edge: intensity pushes the colour past the bloom threshold (1.0).
-  dissolveAppearance.uDissolveEdgeColor.value.set(edgeColor).multiplyScalar(edgeIntensity);
+
+  // The blur pass is driven per frame from inside the canvas (see
+  // BadgeTransition), so it is handed over as a ref instead of as props.
+  const dreamRef = useRef<DreamBlurEffect>(null);
 
   return (
     <main style={{ width: "100vw", height: "100vh", background: "#000" }}>
@@ -139,18 +182,13 @@ export default function Scene() {
         <Suspense fallback={null}>
           <Studio spotIntensity={spotIntensity} />
           <PinStage speed={autoRotateSpeed}>
-            {instances.map((instance) => (
-              <DissolveInstance
-                key={instance.id}
-                instance={instance}
-                appearance={dissolveAppearance}
-                duration={duration}
-                materials={materials}
-                onExited={onExited}
-              >
-                <Badge variant={instance.variant} />
-              </DissolveInstance>
-            ))}
+            <BadgeTransition
+              variant={variant}
+              materials={materials}
+              settings={transition}
+              blur={dreamRef}
+              replayRef={replayRef}
+            />
           </PinStage>
         </Suspense>
 
@@ -164,6 +202,9 @@ export default function Scene() {
         />
 
         <EffectComposer multisampling={8}>
+          {/* First in the chain: the soft-focus haze it produces is what Bloom
+              then blooms, which is most of the dreamlike quality. */}
+          <DreamBlur ref={dreamRef} />
           <Bloom
             intensity={bloomIntensity}
             luminanceThreshold={bloomThreshold}
