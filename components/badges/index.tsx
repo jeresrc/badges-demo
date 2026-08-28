@@ -1,34 +1,34 @@
 "use client";
 
-import { CirclePin } from "./CirclePin";
-import { HexPin } from "./HexPin";
-import { OvalPin } from "./OvalPin";
-import { ShieldPin } from "./ShieldPin";
+import { BoxedPin } from "./BoxedPin";
+import { HexBadge } from "./HexBadge";
+import { Medallion } from "./Medallion";
+import { Packaged } from "./Packaged";
 import type { MetalKind } from "./materials";
 
-export const BADGE_VARIANTS = ["circle", "hex", "shield", "oval"] as const;
+export const BADGE_VARIANTS = ["medallion", "hex", "packaged", "boxed"] as const;
 export type BadgeVariant = (typeof BADGE_VARIANTS)[number];
 
-/** Signature look of each pin — the enamel colour seeds the Leva colour picker. */
+/** Signature look of each variant — the enamel colour seeds the Leva picker. */
 export const BADGE_PRESETS: Record<BadgeVariant, { metal: MetalKind; enamelColor: string }> = {
-  circle: { metal: "gold", enamelColor: "#b8360d" },
-  hex: { metal: "chrome", enamelColor: "#0fa39a" },
-  shield: { metal: "brass", enamelColor: "#16305c" },
-  oval: { metal: "silver", enamelColor: "#141a2e" },
+  medallion: { metal: "gold", enamelColor: "#e85410" },
+  hex: { metal: "chrome", enamelColor: "#ff5a00" },
+  packaged: { metal: "gold", enamelColor: "#d8341f" },
+  boxed: { metal: "gold", enamelColor: "#b81f3d" },
 };
 
 export function Badge({ variant }: { variant: BadgeVariant }) {
   switch (variant) {
     case "hex":
-      return <HexPin />;
-    case "shield":
-      return <ShieldPin />;
-    case "oval":
-      return <OvalPin />;
-    case "circle":
+      return <HexBadge />;
+    case "packaged":
+      return <Packaged />;
+    case "boxed":
+      return <BoxedPin />;
+    case "medallion":
     default:
-      return <CirclePin />;
+      return <Medallion />;
   }
 }
 
-export { CirclePin, HexPin, OvalPin, ShieldPin };
+export { BoxedPin, HexBadge, Medallion, Packaged };

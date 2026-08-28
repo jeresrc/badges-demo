@@ -13,7 +13,7 @@ export type MetalKind = "gold" | "chrome" | "silver" | "brass";
  */
 const METAL_COLOR: Record<MetalKind, string> = {
   gold: "#ffc85c",
-  chrome: "#cdd2d8",
+  chrome: "#e3e7ec",
   silver: "#efece4",
   brass: "#d9b063",
 };
@@ -21,7 +21,7 @@ const METAL_COLOR: Record<MetalKind, string> = {
 /** Per-metal roughness multiplier: brass reads softer, chrome mirror-sharp. */
 const METAL_ROUGHNESS_SCALE: Record<MetalKind, number> = {
   gold: 1,
-  chrome: 0.6,
+  chrome: 0.2,
   silver: 0.85,
   brass: 1.5,
 };
@@ -94,6 +94,84 @@ export function EnamelMaterial({ color }: { color: ColorRepresentation }) {
       reflectivity={0.55}
       ior={1.52}
       specularIntensity={1}
+      envMapIntensity={envMapIntensity}
+    />
+  );
+}
+
+/**
+ * Candy-glass enamel: deep, wet, slightly translucent — reads like hard candy
+ * or coloured glass rather than opaque paint. Transmission lets light dive into
+ * the body and bounce off the metal back plate behind it, which is what gives
+ * the "juicy" depth; attenuation keeps the colour saturated instead of washing
+ * out to clear.
+ */
+export function CandyEnamelMaterial({ color }: { color: ColorRepresentation }) {
+  const { enamelRoughness, clearcoat, clearcoatRoughness, envMapIntensity } = usePinMaterials();
+
+  return (
+    <meshPhysicalMaterial
+      color={color}
+      metalness={0}
+      roughness={Math.min(enamelRoughness, 0.06)}
+      transmission={0.55}
+      thickness={0.6}
+      ior={1.45}
+      attenuationColor={color}
+      attenuationDistance={0.25}
+      clearcoat={clearcoat}
+      clearcoatRoughness={clearcoatRoughness}
+      envMapIntensity={envMapIntensity}
+    />
+  );
+}
+
+/** Piano-black lacquer for presentation boxes: near-black body, glassy coat.
+ * The env contribution is deliberately cut down — at glancing angles Fresnel
+ * would otherwise turn the whole box into a grey mirror. */
+export function LacquerMaterial({ color = "#0a0a0b" }: { color?: ColorRepresentation }) {
+  const { envMapIntensity } = usePinMaterials();
+
+  return (
+    <meshPhysicalMaterial
+      color={color}
+      metalness={0}
+      roughness={0.42}
+      clearcoat={0.8}
+      clearcoatRoughness={0.12}
+      envMapIntensity={envMapIntensity * 0.35}
+    />
+  );
+}
+
+/** Light-drinking velvet insert for the box floor. */
+export function VelvetMaterial() {
+  return <meshStandardMaterial color="#070708" metalness={0} roughness={1} />;
+}
+
+/** Uncoated card stock: flat, light-drinking, zero specular story. */
+export function PaperMaterial({ color }: { color: ColorRepresentation }) {
+  return <meshStandardMaterial color={color} metalness={0} roughness={0.92} />;
+}
+
+/**
+ * Thin vacuum-formed blister film. Transmission ~1 so the charm inside stays
+ * visible; the crinkled geometry supplies the specular interest, the material
+ * just has to be glassy and thin.
+ */
+export function FilmMaterial() {
+  const { envMapIntensity } = usePinMaterials();
+
+  return (
+    <meshPhysicalMaterial
+      color="#ffffff"
+      metalness={0}
+      roughness={0.05}
+      transmission={1}
+      thickness={0.03}
+      ior={1.4}
+      clearcoat={0.4}
+      clearcoatRoughness={0.1}
       envMapIntensity={envMapIntensity}
     />
   );

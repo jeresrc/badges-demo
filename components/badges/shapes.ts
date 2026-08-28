@@ -297,6 +297,55 @@ export function shieldPoints(width: number, height: number, segments = 20): Vect
   return ensureCCW(dedupe(shape.getPoints(segments)));
 }
 
+/** Rotates a shape around the origin by sampling it to a polygon. */
+export function rotatedShape(shape: Shape, angle: number, divisions = 24): Shape {
+  const points = shape.getPoints(divisions).map((p) => p.rotateAround(new Vector2(0, 0), angle));
+  return polygonShape(ensureCCW(dedupe(points)));
+}
+
+/**
+ * Single flower petal pointing up from the origin: two mirrored quadratic
+ * curves meeting in a soft tip. Used for the medallion's raised relief.
+ */
+export function petalShape(length: number, width: number, baseOffset = 0): Shape {
+  const shape = new Shape();
+  shape.moveTo(0, baseOffset);
+  shape.quadraticCurveTo(width, baseOffset + length * 0.42, 0, baseOffset + length);
+  shape.quadraticCurveTo(-width, baseOffset + length * 0.42, 0, baseOffset);
+  shape.closePath();
+  return shape;
+}
+
+/** Axis-aligned rectangle spanning [y0, y1] with the given half-width. */
+export function barShape(halfWidth: number, y0: number, y1: number): Shape {
+  const shape = new Shape();
+  shape.moveTo(-halfWidth, y0);
+  shape.lineTo(halfWidth, y0);
+  shape.lineTo(halfWidth, y1);
+  shape.lineTo(-halfWidth, y1);
+  shape.closePath();
+  return shape;
+}
+
+/** Rounded rectangle centred on the origin. */
+export function roundedRectShape(width: number, height: number, radius: number): Shape {
+  const hw = width / 2;
+  const hh = height / 2;
+  const r = Math.min(radius, hw, hh);
+  const shape = new Shape();
+  shape.moveTo(-hw + r, -hh);
+  shape.lineTo(hw - r, -hh);
+  shape.quadraticCurveTo(hw, -hh, hw, -hh + r);
+  shape.lineTo(hw, hh - r);
+  shape.quadraticCurveTo(hw, hh, hw - r, hh);
+  shape.lineTo(-hw + r, hh);
+  shape.quadraticCurveTo(-hw, hh, -hw, hh - r);
+  shape.lineTo(-hw, -hh + r);
+  shape.quadraticCurveTo(-hw, -hh, -hw + r, -hh);
+  shape.closePath();
+  return shape;
+}
+
 /** Classic n-pointed star used as the raised detail on the oval pin. */
 export function starShape(pointCount: number, outerRadius: number, innerRadius: number): Shape {
   const shape = new Shape();

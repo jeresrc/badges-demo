@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import type { ColorRepresentation, Shape } from "three";
-import { EnamelMaterial, MetalMaterial } from "./materials";
+import { CandyEnamelMaterial, EnamelMaterial, MetalMaterial } from "./materials";
 import type { MetalKind } from "./materials";
 import {
   BACK_BEVEL,
@@ -10,7 +10,6 @@ import {
   BACK_Z,
   DETAIL_BEVEL,
   DETAIL_DEPTH,
-  DETAIL_Z,
   ENAMEL_BEVEL,
   ENAMEL_DEPTH,
   ENAMEL_Z,
@@ -52,21 +51,35 @@ export function DetailPiece({
   metal,
   curveSegments = 96,
   offset = [0, 0],
-}: PieceProps & { metal: MetalKind; offset?: [number, number] }) {
-  const geometry = useExtruded(shape, DETAIL_DEPTH, DETAIL_BEVEL, curveSegments);
+  depth = DETAIL_DEPTH,
+  z,
+}: PieceProps & {
+  metal: MetalKind;
+  offset?: [number, number];
+  depth?: number;
+  z?: number;
+}) {
+  const geometry = useExtruded(shape, depth, DETAIL_BEVEL, curveSegments);
+  const zPos = z ?? RIM_DEPTH / 2 - depth / 2;
   return (
-    <mesh geometry={geometry} position={[offset[0], offset[1], DETAIL_Z]} castShadow receiveShadow>
+    <mesh geometry={geometry} position={[offset[0], offset[1], zPos]} castShadow receiveShadow>
       <MetalMaterial metal={metal} />
     </mesh>
   );
 }
 
 /** A pour of hard enamel filling one cavity. */
-export function EnamelPiece({ shape, color, curveSegments = 96 }: PieceProps & { color: ColorRepresentation }) {
+export function EnamelPiece({
+  shape,
+  color,
+  curveSegments = 96,
+  z = ENAMEL_Z,
+  candy = false,
+}: PieceProps & { color: ColorRepresentation; z?: number; candy?: boolean }) {
   const geometry = useExtruded(shape, ENAMEL_DEPTH, ENAMEL_BEVEL, curveSegments);
   return (
-    <mesh geometry={geometry} position={[0, 0, ENAMEL_Z]} receiveShadow>
-      <EnamelMaterial color={color} />
+    <mesh geometry={geometry} position={[0, 0, z]} receiveShadow>
+      {candy ? <CandyEnamelMaterial color={color} /> : <EnamelMaterial color={color} />}
     </mesh>
   );
 }
