@@ -58,7 +58,7 @@ export function BoxedPin() {
   const materials = usePinMaterials();
   const { enamelColor } = materials;
   // Companion pin stays in the same family — a touch warmer and deeper.
-  const secondColor = useShiftedColor(enamelColor, 0.05, 0.02, -0.05);
+  const secondColor = useShiftedColor(enamelColor, 0.04, 0.02, -0.01);
   // The pins are the focal point but raw env intensity makes the gold bloom
   // into a halo; tame it slightly so highlights stay crisp, not glowing.
   const pinMaterials = useMemo(
@@ -121,8 +121,8 @@ export function BoxedPin() {
           <MiniPin color={enamelColor} ring={false} />
         </group>
         <group
-          position={[0.4, 0.38, -WALL_DEPTH / 2 + FLOOR_DEPTH + 0.14]}
-          rotation={[-0.38, 0.1, -0.55]}
+          position={[0.4, 0.38, -WALL_DEPTH / 2 + FLOOR_DEPTH + 0.08]}
+          rotation={[0.06, 0.08, -0.55]}
           scale={0.5}
         >
           <MiniPin color={secondColor} ring />
