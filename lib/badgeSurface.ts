@@ -187,10 +187,11 @@ export function sampleBadgeSurface(root: Object3D, count: number, out: BadgeSamp
         out.positions[o + 1] = point.y;
         out.positions[o + 2] = point.z;
 
-        // Per-particle brightness jitter plus an occasional gold fleck: the
-        // cloud reads as embers of the badge rather than a flat colour field.
-        const jitter = 0.55 + Math.random() * 0.9;
-        const fleck = Math.random() < 0.06 ? 0.55 : 0;
+        // Barely any per-particle variance: the mass should read as one
+        // material, so this is a gentle shading break-up, not sparkle. A rare,
+        // weak gold fleck keeps it from looking flat-shaded.
+        const jitter = 0.88 + Math.random() * 0.24;
+        const fleck = Math.random() < 0.03 ? 0.3 : 0;
         out.colors[o] = (color.r + (GOLD.r - color.r) * fleck) * jitter;
         out.colors[o + 1] = (color.g + (GOLD.g - color.g) * fleck) * jitter;
         out.colors[o + 2] = (color.b + (GOLD.b - color.b) * fleck) * jitter;
@@ -239,7 +240,7 @@ export function fillFallbackCloud(count: number, out: BadgeSample) {
     out.positions[o] = Math.cos(theta) * s * r;
     out.positions[o + 1] = Math.sin(theta) * s * r;
     out.positions[o + 2] = u * r * 0.25;
-    const jitter = 0.5 + Math.random();
+    const jitter = 0.88 + Math.random() * 0.24;
     out.colors[o] = EMBER.r * jitter;
     out.colors[o + 1] = EMBER.g * jitter;
     out.colors[o + 2] = EMBER.b * jitter;

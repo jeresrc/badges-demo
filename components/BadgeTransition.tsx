@@ -21,10 +21,13 @@ import type { BadgeSlot, TransitionMachine } from "./useBadgeTransition";
 export type TransitionSettings = {
   duration: number;
   particleCount: number;
-  drift: number;
+  cohesion: number;
+  blobSize: number;
   turbulence: number;
+  turbulenceScale: number;
   lift: number;
-  stagger: number;
+  wave: number;
+  melt: number;
   particleSize: number;
   blur: number;
   blurRadius: number;
@@ -34,10 +37,15 @@ export type TransitionSettings = {
   erodeSoftness: number;
 };
 
-/** The badge is gone by 55% of the crossing… */
-const OUT_END = 0.55;
-/** …and the next one starts arriving at 45%, so they overlap for a beat. */
-const IN_START = 0.45;
+/** The badge is gone by 42% of the crossing… */
+const OUT_END = 0.42;
+/**
+ * …and the next one only starts arriving at 58%, leaving a beat in the middle
+ * where neither badge is on screen and the deforming mass stands alone. Kept
+ * as the exact mirror of `OUT_END`, which is what makes `erodeOut(1 - t)`
+ * equal `erodeIn(t)` and lets an interrupted crossing be mirrored.
+ */
+const IN_START = 1 - OUT_END;
 
 function smoothstep01(x: number) {
   const c = x < 0 ? 0 : x > 1 ? 1 : x;
@@ -141,6 +149,7 @@ function ErodedBadge({
 
     // The noise field is sampled in badge space, so it sticks to the geometry
     // while the stage sways instead of sliding across it.
+    g.scale.setScalar(slot.scale);
     g.updateWorldMatrix(true, false);
     slot.uniforms.uErodeRootInv.value.copy(g.matrixWorld).invert();
 
@@ -256,17 +265,19 @@ export function BadgeTransition({
 
     // Look uniforms are shared by reference, so leva edits are plain writes.
     u.uTime.value = state.clock.elapsedTime;
-    u.uDrift.value = s.drift;
+    u.uCohesion.value = s.cohesion;
+    u.uBlobSize.value = s.blobSize;
     u.uTurbulence.value = s.turbulence;
+    u.uTurbulenceScale.value = s.turbulenceScale;
     u.uLift.value = s.lift;
-    u.uStagger.value = s.stagger;
+    u.uWave.value = s.wave;
     u.uSize.value = s.particleSize;
     u.uGlow.value = s.glow;
     look.uErodeScale.value = s.erodeScale;
     look.uErodeSoftness.value = s.erodeSoftness;
-    // The badge's thinning frontier gets a faint ember haze in the same colour
-    // family as the cloud, pushed past the bloom threshold by the glow control.
-    look.uErodeBleed.value.copy(EMBER).multiplyScalar(s.glow * 0.35);
+    // A hint of warmth where the badge is thinning out, in the same colour
+    // family as the mass. Deliberately well under the bloom threshold.
+    look.uErodeBleed.value.copy(EMBER).multiplyScalar(s.glow * 0.12);
 
     const size = state.gl.getDrawingBufferSize(drawingBuffer);
     const fov = "fov" in state.camera ? (state.camera.fov as number) : 45;
@@ -311,6 +322,11 @@ export function BadgeTransition({
     const t = m.t;
     u.uProgress.value = t;
 
+    // Both badges and both ends of the mass contract by the same law, so the
+    // points never come unstuck from the geometry they were sampled off.
+    u.uFromScale.value = 1 - s.melt * erodeOut(t);
+    u.uToScale.value = 1 - s.melt * erodeIn(t);
+
     for (const slot of slotsRef.current) {
       let erode = 1;
       if (m.active) {
@@ -322,6 +338,7 @@ export function BadgeTransition({
         erode = slot.variant === m.to ? 0 : 1;
       }
       slot.uniforms.uErode.value = erode;
+      slot.scale = 1 - s.melt * erode;
     }
 
     // Soft-focus envelope: zero at both ends, peak in the middle of the

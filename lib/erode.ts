@@ -137,8 +137,10 @@ if (uErode > 0.0005) {
   // speckle a badge that is meant to be whole, and 1 leaves nothing behind.
   float erodeThreshold = mix(-erodeW - 0.02, 1.02 + erodeW, uErode);
   float erodeD = erodeN - erodeThreshold;
-  // Stochastic cut: the frontier becomes a band of grain instead of a contour.
-  if (erodeD < erodeHash(gl_FragCoord.xy) * erodeW) discard;
+  // Stochastic cut: the frontier becomes a band of grain instead of a hard
+  // contour. Kept narrow — enough to break the edge, not enough to read as
+  // noise once the soft focus is on it.
+  if (erodeD < erodeHash(gl_FragCoord.xy) * erodeW * 0.6) discard;
   erodeBleed = 1.0 - smoothstep(0.0, erodeW * 2.0, erodeD);
   erodeBleed *= erodeBleed;
 }

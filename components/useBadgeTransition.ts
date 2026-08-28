@@ -37,6 +37,13 @@ export type BadgeSlot = {
   variant: BadgeVariant;
   uniforms: ErodeInstanceUniforms;
   /**
+   * Melt contraction, written by the driver and applied to the badge's group.
+   * A badge does not just fade out where it stands: it draws in towards its
+   * own centre as it goes, which is what hands the silhouette over to the
+   * mass instead of leaving a hole.
+   */
+  scale: number;
+  /**
    * Material settings captured when this badge was told to leave: leva
    * re-seeds the enamel picker for the incoming variant, and the outgoing one
    * must keep the colour it was wearing. `null` = follow the live settings.
@@ -67,6 +74,7 @@ function makeSlot(variant: BadgeVariant): BadgeSlot {
       uErode: { value: 0 },
       uErodeRootInv: { value: new Matrix4() },
     },
+    scale: 1,
     frozenMaterials: null,
   };
 }
