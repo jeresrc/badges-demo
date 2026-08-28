@@ -126,27 +126,41 @@ export function CandyEnamelMaterial({ color }: { color: ColorRepresentation }) {
   );
 }
 
-/** Piano-black lacquer for presentation boxes: near-black body, glassy coat.
- * The env contribution is deliberately cut down — at glancing angles Fresnel
- * would otherwise turn the whole box into a grey mirror. */
-export function LacquerMaterial({ color = "#0a0a0b" }: { color?: ColorRepresentation }) {
+/**
+ * Piano-black lacquer for presentation boxes. The body must stay BLACK: a
+ * near-black albedo with a *sharp* glassy coat (low roughness) so the studio
+ * panels draw crisp white edges instead of a broad grey sheen, and the env
+ * contribution cut down so glancing Fresnel never lifts the body to grey.
+ */
+export function LacquerMaterial({ color = "#050506" }: { color?: ColorRepresentation }) {
   const { envMapIntensity } = usePinMaterials();
 
   return (
     <meshPhysicalMaterial
       color={color}
       metalness={0}
-      roughness={0.42}
-      clearcoat={0.8}
-      clearcoatRoughness={0.12}
-      envMapIntensity={envMapIntensity * 0.35}
+      roughness={0.16}
+      clearcoat={1}
+      clearcoatRoughness={0.05}
+      envMapIntensity={envMapIntensity * 0.4}
     />
   );
 }
 
-/** Light-drinking velvet insert for the box floor. */
+/** Light-drinking velvet insert: matte black body with the faintest grazing
+ * sheen so the floor reads as fabric rather than a hole in the render. */
 export function VelvetMaterial() {
-  return <meshStandardMaterial color="#070708" metalness={0} roughness={1} />;
+  return (
+    <meshPhysicalMaterial
+      color="#0a0a0d"
+      metalness={0}
+      roughness={1}
+      sheen={0.5}
+      sheenRoughness={0.85}
+      sheenColor="#16161c"
+      envMapIntensity={0.3}
+    />
+  );
 }
 
 /** Uncoated card stock: flat, light-drinking, zero specular story. */
@@ -166,12 +180,12 @@ export function FilmMaterial() {
     <meshPhysicalMaterial
       color="#ffffff"
       metalness={0}
-      roughness={0.05}
+      roughness={0.08}
       transmission={1}
-      thickness={0.03}
+      thickness={0.02}
       ior={1.4}
-      clearcoat={0.4}
-      clearcoatRoughness={0.1}
+      clearcoat={0.5}
+      clearcoatRoughness={0.08}
       envMapIntensity={envMapIntensity}
     />
   );
