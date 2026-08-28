@@ -6,6 +6,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer, ToneMapping, wrapEffect } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { button, Leva, useControls } from "leva";
+import { parseAsStringLiteral, useQueryState } from "nuqs";
 import type { Group } from "three";
 import { DreamBlurEffect } from "../lib/dreamBlur";
 import { BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
@@ -37,10 +38,32 @@ function PinStage({ speed, children }: { speed: number; children: React.ReactNod
   return <group ref={group}>{children}</group>;
 }
 
+const DEFAULT_BADGE: BadgeVariant = "medallion";
+
 export default function Scene() {
-  const { variant } = useControls("Badge", {
-    variant: { value: "medallion", options: [...BADGE_VARIANTS] },
-  }) as { variant: BadgeVariant };
+  const [badgeQuery, setBadgeQuery] = useQueryState(
+    "badge",
+    parseAsStringLiteral([...BADGE_VARIANTS]).withDefault(DEFAULT_BADGE),
+  );
+  const [{ variant }, setBadgeControls] = useControls("Badge", () => ({
+    variant: { value: badgeQuery, options: [...BADGE_VARIANTS] },
+  }));
+  const previousSelection = useRef({ query: badgeQuery, leva: variant });
+
+  useEffect(() => {
+    const queryChanged = previousSelection.current.query !== badgeQuery;
+    const levaChanged = previousSelection.current.leva !== variant;
+    previousSelection.current = { query: badgeQuery, leva: variant };
+
+    if (queryChanged) {
+      if (variant !== badgeQuery) setBadgeControls({ variant: badgeQuery });
+      return;
+    }
+
+    if (levaChanged && badgeQuery !== variant) {
+      void setBadgeQuery(variant, { history: "replace" });
+    }
+  }, [badgeQuery, setBadgeControls, setBadgeQuery, variant]);
 
   const [
     {
