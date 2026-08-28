@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { OrbitControls } from "@react-three/drei";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Leva, useControls } from "leva";
@@ -13,30 +13,27 @@ import { PinMaterialProvider } from "./badges/materials";
 import type { PinMaterialSettings } from "./badges/materials";
 import { Studio } from "./Studio";
 
-/** Slow idle turntable plus a barely-there tilt so highlights keep moving. */
+/**
+ * Gentle idle sway — the badge never turns its back to the camera, it just
+ * rocks a few degrees so the highlights keep sliding across the metal the way
+ * a product shot on a slow gimbal would.
+ */
 function PinStage({ speed, children }: { speed: number; children: React.ReactNode }) {
   const group = useRef<Group>(null);
 
-  useFrame((state, delta) => {
+  useFrame((state) => {
     if (!group.current) return;
-    group.current.rotation.y += delta * speed;
-    group.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.4) * 0.08;
+    const t = state.clock.elapsedTime;
+    group.current.rotation.y = Math.sin(t * 0.45 * speed) * 0.38;
+    group.current.rotation.x = Math.sin(t * 0.3 * speed) * 0.07;
   });
 
   return <group ref={group}>{children}</group>;
 }
 
-function DebugBridge() {
-  const three = useThree();
-  useEffect(() => {
-    (window as unknown as { __three: unknown }).__three = three;
-  }, [three]);
-  return null;
-}
-
 export default function Scene() {
   const { variant } = useControls("Badge", {
-    variant: { value: "circle", options: [...BADGE_VARIANTS] },
+    variant: { value: "medallion", options: [...BADGE_VARIANTS] },
   }) as { variant: BadgeVariant };
 
   const [
@@ -51,20 +48,20 @@ export default function Scene() {
     },
     setMaterials,
   ] = useControls("Materials", () => ({
-    enamelColor: BADGE_PRESETS.circle.enamelColor,
+    enamelColor: BADGE_PRESETS.medallion.enamelColor,
     enamelRoughness: { value: 0.22, min: 0.02, max: 0.8, step: 0.01 },
     clearcoat: { value: 1, min: 0, max: 1, step: 0.01 },
     clearcoatRoughness: { value: 0.06, min: 0, max: 0.5, step: 0.005 },
     metalRoughness: { value: 0.12, min: 0.01, max: 0.8, step: 0.01 },
     metalness: { value: 1, min: 0, max: 1, step: 0.01 },
-    envMapIntensity: { value: 1.8, min: 0, max: 4, step: 0.05 },
+    envMapIntensity: { value: 1.15, min: 0, max: 4, step: 0.05 },
   }));
 
   const { bloomIntensity, bloomThreshold, autoRotateSpeed, spotIntensity } = useControls("Scene", {
-    bloomIntensity: { value: 0.7, min: 0, max: 3, step: 0.05 },
-    bloomThreshold: { value: 0.72, min: 0, max: 1.5, step: 0.01 },
+    bloomIntensity: { value: 0.55, min: 0, max: 3, step: 0.05 },
+    bloomThreshold: { value: 1.0, min: 0, max: 1.5, step: 0.01 },
     autoRotateSpeed: { value: 0.35, min: 0, max: 2, step: 0.01 },
-    spotIntensity: { value: 45, min: 0, max: 300, step: 1 },
+    spotIntensity: { value: 28, min: 0, max: 300, step: 1 },
   });
 
   // Each pin ships with its own signature enamel colour; switching variants
@@ -104,7 +101,6 @@ export default function Scene() {
       >
         <color attach="background" args={["#000000"]} />
 
-        <DebugBridge />
         <Suspense fallback={null}>
           <Studio spotIntensity={spotIntensity} />
           <PinMaterialProvider value={materials}>
