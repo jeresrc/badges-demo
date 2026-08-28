@@ -5,13 +5,16 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { Leva, useControls } from "leva";
+import { button, Leva, useControls } from "leva";
+import { Color } from "three";
 import type { Group } from "three";
+import type { DissolveAppearanceUniforms } from "../lib/dissolve";
 import { Badge, BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
 import type { BadgeVariant } from "./badges";
-import { PinMaterialProvider } from "./badges/materials";
 import type { PinMaterialSettings } from "./badges/materials";
+import { DissolveInstance } from "./DissolveInstance";
 import { Studio } from "./Studio";
+import { useBadgeTransition } from "./useBadgeTransition";
 
 /**
  * Gentle idle sway — the badge never turns its back to the camera, it just
@@ -57,6 +60,20 @@ export default function Scene() {
     envMapIntensity: { value: 1.15, min: 0, max: 4, step: 0.05 },
   }));
 
+  const replayRef = useRef<() => void>(() => {});
+  const { duration, stagger, noiseScale, edgeWidth, edgeColor, edgeIntensity } = useControls(
+    "Transition",
+    {
+      duration: { value: 0.9, min: 0.2, max: 3, step: 0.05 },
+      stagger: { value: 0.3, min: 0, max: 1.5, step: 0.05 },
+      noiseScale: { value: 3, min: 0.5, max: 12, step: 0.1 },
+      edgeWidth: { value: 0.06, min: 0.005, max: 0.25, step: 0.005 },
+      edgeColor: "#ff9a3c",
+      edgeIntensity: { value: 7, min: 0, max: 30, step: 0.5 },
+      replay: button(() => replayRef.current()),
+    },
+  );
+
   const { bloomIntensity, bloomThreshold, autoRotateSpeed, spotIntensity } = useControls("Scene", {
     bloomIntensity: { value: 0.55, min: 0, max: 3, step: 0.05 },
     bloomThreshold: { value: 1.0, min: 0, max: 1.5, step: 0.01 },
@@ -91,6 +108,24 @@ export default function Scene() {
     ],
   );
 
+  const { instances, onExited, replay } = useBadgeTransition(variant, materials, stagger);
+  replayRef.current = replay;
+
+  // The look uniforms are shared by reference with every patched material, so
+  // leva edits are plain mutations — no material rebuilds, no re-compiles.
+  const dissolveAppearance = useMemo<DissolveAppearanceUniforms>(
+    () => ({
+      uDissolveNoiseScale: { value: 3 },
+      uDissolveEdgeWidth: { value: 0.06 },
+      uDissolveEdgeColor: { value: new Color("#ff9a3c") },
+    }),
+    [],
+  );
+  dissolveAppearance.uDissolveNoiseScale.value = noiseScale;
+  dissolveAppearance.uDissolveEdgeWidth.value = edgeWidth;
+  // HDR edge: intensity pushes the colour past the bloom threshold (1.0).
+  dissolveAppearance.uDissolveEdgeColor.value.set(edgeColor).multiplyScalar(edgeIntensity);
+
   return (
     <main style={{ width: "100vw", height: "100vh", background: "#000" }}>
       <Canvas
@@ -103,11 +138,20 @@ export default function Scene() {
 
         <Suspense fallback={null}>
           <Studio spotIntensity={spotIntensity} />
-          <PinMaterialProvider value={materials}>
-            <PinStage speed={autoRotateSpeed}>
-              <Badge variant={variant} />
-            </PinStage>
-          </PinMaterialProvider>
+          <PinStage speed={autoRotateSpeed}>
+            {instances.map((instance) => (
+              <DissolveInstance
+                key={instance.id}
+                instance={instance}
+                appearance={dissolveAppearance}
+                duration={duration}
+                materials={materials}
+                onExited={onExited}
+              >
+                <Badge variant={instance.variant} />
+              </DissolveInstance>
+            ))}
+          </PinStage>
         </Suspense>
 
         <OrbitControls
