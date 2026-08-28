@@ -1,53 +1,127 @@
 "use client";
 
-import { Suspense, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
+import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { Leva, useControls } from "leva";
-import type { Mesh } from "three";
+import type { Group } from "three";
+import { Badge, BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
+import type { BadgeVariant } from "./badges";
+import { PinMaterialProvider } from "./badges/materials";
+import type { PinMaterialSettings } from "./badges/materials";
+import { Studio } from "./Studio";
 
-function PlaceholderBadge({ rotationSpeed }: { rotationSpeed: number }) {
-  const mesh = useRef<Mesh>(null);
+/** Slow idle turntable plus a barely-there tilt so highlights keep moving. */
+function PinStage({ speed, children }: { speed: number; children: React.ReactNode }) {
+  const group = useRef<Group>(null);
 
-  useFrame((_, delta) => {
-    if (mesh.current) {
-      mesh.current.rotation.y += delta * rotationSpeed;
-    }
+  useFrame((state, delta) => {
+    if (!group.current) return;
+    group.current.rotation.y += delta * speed;
+    group.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.4) * 0.08;
   });
 
-  return (
-    <mesh ref={mesh} rotation={[Math.PI / 5, 0, 0]}>
-      <torusGeometry args={[1.2, 0.38, 64, 128]} />
-      <meshStandardMaterial
-        color="#d51f45"
-        metalness={0.35}
-        roughness={0.2}
-      />
-    </mesh>
-  );
+  return <group ref={group}>{children}</group>;
 }
 
 export default function Scene() {
-  const { rotationSpeed } = useControls({
-    rotationSpeed: { value: 0.35, min: 0, max: 2, step: 0.05 },
+  const { variant } = useControls("Badge", {
+    variant: { value: "circle", options: [...BADGE_VARIANTS] },
+  }) as { variant: BadgeVariant };
+
+  const [
+    {
+      enamelColor,
+      enamelRoughness,
+      clearcoat,
+      clearcoatRoughness,
+      metalRoughness,
+      metalness,
+      envMapIntensity,
+    },
+    setMaterials,
+  ] = useControls("Materials", () => ({
+    enamelColor: BADGE_PRESETS.circle.enamelColor,
+    enamelRoughness: { value: 0.22, min: 0.02, max: 0.8, step: 0.01 },
+    clearcoat: { value: 1, min: 0, max: 1, step: 0.01 },
+    clearcoatRoughness: { value: 0.04, min: 0, max: 0.5, step: 0.005 },
+    metalRoughness: { value: 0.12, min: 0.01, max: 0.8, step: 0.01 },
+    metalness: { value: 1, min: 0, max: 1, step: 0.01 },
+    envMapIntensity: { value: 1.35, min: 0, max: 4, step: 0.05 },
+  }));
+
+  const { bloomIntensity, bloomThreshold, autoRotateSpeed, spotIntensity } = useControls("Scene", {
+    bloomIntensity: { value: 0.7, min: 0, max: 3, step: 0.05 },
+    bloomThreshold: { value: 0.72, min: 0, max: 1.5, step: 0.01 },
+    autoRotateSpeed: { value: 0.35, min: 0, max: 2, step: 0.01 },
+    spotIntensity: { value: 90, min: 0, max: 300, step: 1 },
   });
+
+  // Each pin ships with its own signature enamel colour; switching variants
+  // re-seeds the picker instead of dragging the previous colour along.
+  useEffect(() => {
+    setMaterials({ enamelColor: BADGE_PRESETS[variant].enamelColor });
+  }, [variant, setMaterials]);
+
+  const materials = useMemo<PinMaterialSettings>(
+    () => ({
+      enamelColor,
+      enamelRoughness,
+      clearcoat,
+      clearcoatRoughness,
+      metalRoughness,
+      metalness,
+      envMapIntensity,
+    }),
+    [
+      enamelColor,
+      enamelRoughness,
+      clearcoat,
+      clearcoatRoughness,
+      metalRoughness,
+      metalness,
+      envMapIntensity,
+    ],
+  );
 
   return (
     <main style={{ width: "100vw", height: "100vh", background: "#000" }}>
-      <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-        <color attach="background" args={["#000"]} />
-        <ambientLight intensity={0.45} />
-        <spotLight position={[4, 5, 5]} intensity={80} angle={0.35} />
-        <spotLight
-          position={[-4, -1, 3]}
-          intensity={45}
-          angle={0.45}
-          color="#8db6ff"
-        />
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        gl={{ antialias: true }}
+        camera={{ position: [0, 0, 4.4], fov: 45, near: 0.1, far: 100 }}
+      >
+        <color attach="background" args={["#000000"]} />
+
         <Suspense fallback={null}>
-          <PlaceholderBadge rotationSpeed={rotationSpeed} />
+          <Studio spotIntensity={spotIntensity} />
+          <PinMaterialProvider value={materials}>
+            <PinStage speed={autoRotateSpeed}>
+              <Badge variant={variant} />
+            </PinStage>
+          </PinMaterialProvider>
         </Suspense>
-        <OrbitControls enableDamping />
+
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
+          enablePan={false}
+          minDistance={2.4}
+          maxDistance={9}
+        />
+
+        <EffectComposer multisampling={8}>
+          <Bloom
+            intensity={bloomIntensity}
+            luminanceThreshold={bloomThreshold}
+            luminanceSmoothing={0.25}
+            mipmapBlur
+            radius={0.75}
+          />
+        </EffectComposer>
       </Canvas>
       <Leva collapsed={false} />
     </main>
