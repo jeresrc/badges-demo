@@ -45,20 +45,19 @@ type Fold = { from: [number, number]; to: [number, number]; amp: number; width: 
  * elegant specular streaks instead of noise.
  */
 const FOLDS: Fold[] = [
-  { from: [0.38, 0.2], to: [0.78, 0.88], amp: 0.008, width: 0.13 },
-  { from: [-0.4, 0.14], to: [-0.68, 0.84], amp: 0.006, width: 0.11 },
+  { from: [0.42, 0.28], to: [0.72, 0.9], amp: 0.004, width: 0.16 },
   { from: [-0.2, -0.94], to: [0.56, -1.02], amp: 0.006, width: 0.12 },
 ];
 
 /** Quilted dimple zone — kept subtle so it reads as texture, not noise. */
-const QUILT_AMPLITUDE = 0.002;
+const QUILT_AMPLITUDE = 0.0012;
 const QUILT_FREQUENCY = 10;
 /** Barely-there ripple that keeps big flat areas from reading dead. */
-const MICRO_AMPLITUDE = 0.0008;
+const MICRO_AMPLITUDE = 0.0004;
 
 /** Puckered lip where the loose film meets the weld — draws the silhouette. */
-const LIP_AMPLITUDE = 0.012;
-const LIP_WIDTH = 0.035;
+const LIP_AMPLITUDE = 0.008;
+const LIP_WIDTH = 0.05;
 
 /* ------------------------------------------------------------------------ */
 /* Header card                                                               */

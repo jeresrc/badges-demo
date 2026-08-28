@@ -180,12 +180,12 @@ export function FilmMaterial() {
     <meshPhysicalMaterial
       color="#ffffff"
       metalness={0}
-      roughness={0.08}
+      roughness={0.11}
       transmission={1}
       thickness={0.02}
       ior={1.4}
-      clearcoat={0.5}
-      clearcoatRoughness={0.08}
+      clearcoat={0.3}
+      clearcoatRoughness={0.12}
       envMapIntensity={envMapIntensity}
     />
   );
