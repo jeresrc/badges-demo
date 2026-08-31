@@ -13,6 +13,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link
+          rel="preload"
+          href="/fonts/typeface.json"
+          as="fetch"
+          type="application/json"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body>{children}</body>
     </html>
   );

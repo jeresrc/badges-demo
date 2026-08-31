@@ -1,8 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { OrbitControls } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { AdaptiveDpr, OrbitControls } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, EffectComposer, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Leva, useControls } from "leva";
@@ -29,6 +29,99 @@ function PinStage({ speed, children }: { speed: number; children: React.ReactNod
   });
 
   return <group ref={group}>{children}</group>;
+}
+
+type DiagnosticSample = {
+  frameIntervalMs: number;
+  cpuSubmitMs: number;
+  calls: number;
+  triangles: number;
+  pixelRatio: number;
+};
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
+}
+
+function PerformanceDiagnostics({
+  variant,
+  clearcoat,
+  adaptiveDpr,
+}: {
+  variant: BadgeVariant;
+  clearcoat: number;
+  adaptiveDpr: boolean;
+}) {
+  const gl = useThree((state) => state.gl);
+  const frameStartedAt = useRef(0);
+  const frameCount = useRef(0);
+  const samples = useRef<DiagnosticSample[]>([]);
+  const reported = useRef(false);
+  const gpuTimerAvailable = useRef(false);
+
+  useEffect(() => {
+    const previousAutoReset = gl.info.autoReset;
+    const context = gl.getContext();
+    gpuTimerAvailable.current =
+      context instanceof WebGL2RenderingContext &&
+      context.getExtension("EXT_disjoint_timer_query_webgl2") !== null;
+    gl.info.autoReset = false;
+    gl.info.reset();
+
+    return () => {
+      gl.info.autoReset = previousAutoReset;
+      gl.info.reset();
+      frameCount.current = 0;
+      samples.current = [];
+      reported.current = false;
+    };
+  }, [gl]);
+
+  useFrame(() => {
+    gl.info.reset();
+    frameStartedAt.current = performance.now();
+  }, Number.NEGATIVE_INFINITY);
+
+  useFrame((_, delta) => {
+    frameCount.current += 1;
+    if (frameCount.current <= 120 || reported.current) return;
+
+    samples.current.push({
+      frameIntervalMs: delta * 1000,
+      cpuSubmitMs: performance.now() - frameStartedAt.current,
+      calls: gl.info.render.calls,
+      triangles: gl.info.render.triangles,
+      pixelRatio: gl.getPixelRatio(),
+    });
+
+    if (samples.current.length === 300) {
+      const current = samples.current;
+      reported.current = true;
+      console.info("[3d-performance]", {
+        variant,
+        clearcoat,
+        adaptiveDpr,
+        contextAntialias: gl.getContext().getContextAttributes()?.antialias ?? null,
+        gpuTiming: gpuTimerAvailable.current
+          ? "not measured in app; use a verified browser GPU trace"
+          : "unavailable: EXT_disjoint_timer_query_webgl2 is absent",
+        frameIntervalMs: median(current.map((sample) => sample.frameIntervalMs)),
+        cpuSubmitMs: median(current.map((sample) => sample.cpuSubmitMs)),
+        calls: median(current.map((sample) => sample.calls)),
+        triangles: median(current.map((sample) => sample.triangles)),
+        pixelRatio: median(current.map((sample) => sample.pixelRatio)),
+        geometries: gl.info.memory.geometries,
+        textures: gl.info.memory.textures,
+        programs: gl.info.programs?.length ?? 0,
+      });
+    }
+  }, Number.POSITIVE_INFINITY);
+
+  return null;
 }
 
 export default function Scene() {
@@ -64,6 +157,11 @@ export default function Scene() {
     spotIntensity: { value: 28, min: 0, max: 300, step: 1 },
   });
 
+  const { adaptiveDpr, showDiagnostics } = useControls("Performance", {
+    adaptiveDpr: false,
+    showDiagnostics: false,
+  });
+
   // Each pin ships with its own signature enamel colour; switching variants
   // re-seeds the picker instead of dragging the previous colour along.
   useEffect(() => {
@@ -74,7 +172,9 @@ export default function Scene() {
     () => ({
       enamelColor,
       enamelRoughness,
-      clearcoat,
+      // Three recompiles MeshPhysicalMaterial when clearcoat crosses zero.
+      // Epsilon is visually zero while keeping the shader define stable.
+      clearcoat: Math.max(clearcoat, Number.EPSILON),
       clearcoatRoughness,
       metalRoughness,
       metalness,
@@ -94,9 +194,9 @@ export default function Scene() {
   return (
     <main style={{ width: "100vw", height: "100vh", background: "#000" }}>
       <Canvas
-        shadows
         dpr={[1, 2]}
-        gl={{ antialias: true }}
+        gl={{ antialias: false }}
+        performance={{ min: 0.5, max: 1, debounce: 200 }}
         camera={{ position: [0, 0, 4.4], fov: 45, near: 0.1, far: 100 }}
       >
         <color attach="background" args={["#000000"]} />
@@ -110,8 +210,12 @@ export default function Scene() {
           </PinMaterialProvider>
         </Suspense>
 
+        {adaptiveDpr && <AdaptiveDpr />}
+
         <OrbitControls
+          key={adaptiveDpr ? "adaptive-dpr" : "fixed-dpr"}
           makeDefault
+          regress={adaptiveDpr}
           enableDamping
           dampingFactor={0.08}
           enablePan={false}
@@ -131,6 +235,14 @@ export default function Scene() {
               has to be re-applied here or every highlight clips to flat white. */}
           <ToneMapping mode={ToneMappingMode.NEUTRAL} />
         </EffectComposer>
+        {showDiagnostics && (
+          <PerformanceDiagnostics
+            key={`${variant}:${clearcoat}:${adaptiveDpr}`}
+            variant={variant}
+            clearcoat={clearcoat}
+            adaptiveDpr={adaptiveDpr}
+          />
+        )}
       </Canvas>
       <Leva collapsed={false} />
     </main>

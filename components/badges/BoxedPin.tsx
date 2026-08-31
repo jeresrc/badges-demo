@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { LacquerMaterial, VelvetMaterial, usePinMaterials, useShiftedColor } from "./materials";
 import { BackPlate, DetailPiece, EnamelPiece, RimPiece } from "./parts";
 import type { ColorRepresentation } from "three";
@@ -78,20 +78,29 @@ export function BoxedPin() {
     [],
   );
 
+  useEffect(
+    () => () => {
+      wallGeometry.dispose();
+      floorGeometry.dispose();
+      lidGeometry.dispose();
+    },
+    [floorGeometry, lidGeometry, wallGeometry],
+  );
+
   return (
     // Tilted toward the camera so we look down into the open tray.
     <group rotation={[-0.42, 0, 0]} position={[0, -0.12, 0]} scale={0.92}>
       {/* Tray — lacquered shell, velvet insert on the floor. */}
-      <mesh geometry={floorGeometry} position={[0, 0, -WALL_DEPTH / 2 + FLOOR_DEPTH / 2]} receiveShadow>
+      <mesh geometry={floorGeometry} position={[0, 0, -WALL_DEPTH / 2 + FLOOR_DEPTH / 2]}>
         <VelvetMaterial />
       </mesh>
-      <mesh geometry={wallGeometry} castShadow receiveShadow>
+      <mesh geometry={wallGeometry}>
         <LacquerMaterial />
       </mesh>
 
       {/* Lid, hinged along the top edge, swung back and resting open. */}
       <group position={[0, BOX_SIZE / 2, -WALL_DEPTH / 2]} rotation={[LID_OPEN_ANGLE, 0, 0]}>
-        <mesh geometry={lidGeometry} position={[0, BOX_SIZE / 2, LID_DEPTH / 2]} castShadow receiveShadow>
+        <mesh geometry={lidGeometry} position={[0, BOX_SIZE / 2, LID_DEPTH / 2]}>
           <LacquerMaterial />
         </mesh>
       </group>

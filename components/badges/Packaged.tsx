@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { PlaneGeometry } from "three";
 import { FilmMaterial, MetalMaterial, PaperMaterial, usePinMaterials } from "./materials";
 import { BackPlate, DetailPiece, EnamelPiece, RimPiece } from "./parts";
@@ -26,7 +26,7 @@ function smoothstep(edge0: number, edge1: number, x: number) {
  * fades to zero at the border so the edge reads as a heat-sealed flat seam.
  */
 function useBagGeometry(mirror = false) {
-  return useMemo(() => {
+  const geometry = useMemo(() => {
     const geometry = new PlaneGeometry(BAG_WIDTH, BAG_HEIGHT, 140, 180);
     const position = geometry.attributes.position;
 
@@ -57,6 +57,10 @@ function useBagGeometry(mirror = false) {
     geometry.computeVertexNormals();
     return geometry;
   }, [mirror]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return geometry;
 }
 
 /** Small soft charm sealed inside the bag — a simple enamel roundel. */
@@ -75,11 +79,11 @@ function Charm() {
       <EnamelPiece shape={field} color={enamelColor} />
       <DetailPiece shape={star} metal="gold" curveSegments={2} />
       {/* Keyring loop poking up from the charm. */}
-      <mesh position={[0, 1.12, 0]} rotation={[0.35, 0, 0]} castShadow>
+      <mesh position={[0, 1.12, 0]} rotation={[0.35, 0, 0]}>
         <torusGeometry args={[0.22, 0.035, 24, 64]} />
         <MetalMaterial metal="silver" />
       </mesh>
-      <mesh position={[0, 0.98, 0]} castShadow>
+      <mesh position={[0, 0.98, 0]}>
         <cylinderGeometry args={[0.05, 0.05, 0.14, 24]} />
         <MetalMaterial metal="silver" />
       </mesh>
@@ -116,15 +120,15 @@ export function Packaged() {
 
       {/* Folded paper header card stapled over the sealed top edge. */}
       <group position={[0, CARD_Y, 0]}>
-        <mesh position={[0, 0, 0.11]} castShadow>
+        <mesh position={[0, 0, 0.11]}>
           <boxGeometry args={[CARD_WIDTH, CARD_HEIGHT, 0.022]} />
           <PaperMaterial color="#c5cfba" />
         </mesh>
-        <mesh position={[0, 0, -0.11]} castShadow>
+        <mesh position={[0, 0, -0.11]}>
           <boxGeometry args={[CARD_WIDTH, CARD_HEIGHT, 0.022]} />
           <PaperMaterial color="#c5cfba" />
         </mesh>
-        <mesh position={[0, CARD_HEIGHT / 2, 0]} castShadow>
+        <mesh position={[0, CARD_HEIGHT / 2, 0]}>
           <boxGeometry args={[CARD_WIDTH, 0.022, 0.242]} />
           <PaperMaterial color="#c5cfba" />
         </mesh>

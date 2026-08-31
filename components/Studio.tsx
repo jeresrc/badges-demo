@@ -13,7 +13,7 @@ import { Environment, Lightformer } from "@react-three/drei";
  * the panels as reflections in the metal and in the enamel's clearcoat.
  *
  * Two real spot lights sit on top of that to give directional, controllable
- * shading and shadows across the recessed enamel.
+ * shading across the recessed enamel without allocating shadow maps.
  */
 export function Studio({ spotIntensity }: { spotIntensity: number }) {
   return (
