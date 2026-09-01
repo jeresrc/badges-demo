@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { LacquerMaterial, VelvetMaterial, usePinMaterials, useShiftedColor } from "./materials";
+import {
+  LacquerMaterial,
+  PinMaterialProvider,
+  VelvetMaterial,
+  usePinMaterials,
+  useShiftedColor,
+} from "./materials";
 import { BackPlate, DetailPiece, EnamelPiece, RimPiece } from "./parts";
 import type { ColorRepresentation } from "three";
 import {
@@ -49,8 +55,16 @@ function MiniPin({ color, ring }: { color: ColorRepresentation; ring: boolean })
  * background so only its lacquer highlights and the pins carry the image.
  */
 export function BoxedPin() {
-  const { enamelColor } = usePinMaterials();
-  const secondColor = useShiftedColor(enamelColor, 0.52, -0.08, -0.02);
+  const materials = usePinMaterials();
+  const { enamelColor } = materials;
+  // Companion pin stays in the same family — a touch warmer and deeper.
+  const secondColor = useShiftedColor(enamelColor, 0.04, 0.02, -0.01);
+  // The pins are the focal point but raw env intensity makes the gold bloom
+  // into a halo; tame it slightly so highlights stay crisp, not glowing.
+  const pinMaterials = useMemo(
+    () => ({ ...materials, envMapIntensity: materials.envMapIntensity * 0.7 }),
+    [materials],
+  );
 
   const wallGeometry = useMemo(() => {
     const outline = roundedRectShape(BOX_SIZE, BOX_SIZE, BOX_CORNER);
@@ -105,17 +119,24 @@ export function BoxedPin() {
         </mesh>
       </group>
 
-      {/* Pins resting on the floor, one slightly overlapping the other. */}
-      <group position={[-0.38, -0.3, -WALL_DEPTH / 2 + FLOOR_DEPTH + 0.07]} rotation={[0, 0, 0.35]} scale={0.5}>
-        <MiniPin color={enamelColor} ring={false} />
-      </group>
-      <group
-        position={[0.42, 0.32, -WALL_DEPTH / 2 + FLOOR_DEPTH + 0.09]}
-        rotation={[0.12, -0.1, -0.5]}
-        scale={0.5}
-      >
-        <MiniPin color={secondColor} ring />
-      </group>
+      {/* Pins resting casually on the velvet: one laid nearly flat, the
+          other tipped up against the far wall as if dropped in by hand. */}
+      <PinMaterialProvider value={pinMaterials}>
+        <group
+          position={[-0.34, -0.32, -WALL_DEPTH / 2 + FLOOR_DEPTH + 0.06]}
+          rotation={[0.1, 0.06, 0.42]}
+          scale={0.5}
+        >
+          <MiniPin color={enamelColor} ring={false} />
+        </group>
+        <group
+          position={[0.4, 0.38, -WALL_DEPTH / 2 + FLOOR_DEPTH + 0.08]}
+          rotation={[0.06, 0.08, -0.55]}
+          scale={0.5}
+        >
+          <MiniPin color={secondColor} ring />
+        </group>
+      </PinMaterialProvider>
     </group>
   );
 }

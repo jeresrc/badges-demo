@@ -3,15 +3,22 @@
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { AdaptiveDpr, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Bloom, EffectComposer, ToneMapping } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, ToneMapping, wrapEffect } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { Leva, useControls } from "leva";
+import { button, Leva, useControls } from "leva";
+import { parseAsStringLiteral, useQueryState } from "nuqs";
 import type { Group } from "three";
-import { Badge, BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
+import { DreamBlurEffect } from "../lib/dreamBlur";
+import { BADGE_PRESETS, BADGE_VARIANTS } from "./badges";
 import type { BadgeVariant } from "./badges";
-import { PinMaterialProvider } from "./badges/materials";
 import type { PinMaterialSettings } from "./badges/materials";
+import { BadgeTransition } from "./BadgeTransition";
+import type { TransitionSettings } from "./BadgeTransition";
 import { Studio } from "./Studio";
+
+// Registered once at module scope so the component identity stays stable and
+// the effect instance is never rebuilt behind the composer's back.
+const DreamBlur = wrapEffect(DreamBlurEffect);
 
 /**
  * Gentle idle sway — the badge never turns its back to the camera, it just
@@ -124,10 +131,32 @@ function PerformanceDiagnostics({
   return null;
 }
 
+const DEFAULT_BADGE: BadgeVariant = "medallion";
+
 export default function Scene() {
-  const { variant } = useControls("Badge", {
-    variant: { value: "medallion", options: [...BADGE_VARIANTS] },
-  }) as { variant: BadgeVariant };
+  const [badgeQuery, setBadgeQuery] = useQueryState(
+    "badge",
+    parseAsStringLiteral([...BADGE_VARIANTS]).withDefault(DEFAULT_BADGE),
+  );
+  const [{ variant }, setBadgeControls] = useControls("Badge", () => ({
+    variant: { value: badgeQuery, options: [...BADGE_VARIANTS] },
+  }));
+  const previousSelection = useRef({ query: badgeQuery, leva: variant });
+
+  useEffect(() => {
+    const queryChanged = previousSelection.current.query !== badgeQuery;
+    const levaChanged = previousSelection.current.leva !== variant;
+    previousSelection.current = { query: badgeQuery, leva: variant };
+
+    if (queryChanged) {
+      if (variant !== badgeQuery) setBadgeControls({ variant: badgeQuery });
+      return;
+    }
+
+    if (levaChanged && badgeQuery !== variant) {
+      void setBadgeQuery(variant, { history: "replace" });
+    }
+  }, [badgeQuery, setBadgeControls, setBadgeQuery, variant]);
 
   const [
     {
@@ -150,6 +179,46 @@ export default function Scene() {
     envMapIntensity: { value: 1.15, min: 0, max: 4, step: 0.05 },
   }));
 
+  const replayRef = useRef<() => void>(() => {});
+  const {
+    duration,
+    particleCount,
+    particleSize,
+    cohesion,
+    blobSize,
+    turbulence,
+    turbulenceScale,
+    lift,
+    wave,
+    melt,
+    glow,
+    blur,
+    blurRadius,
+    halation,
+    erodeScale,
+    erodeSoftness,
+  } = useControls("Transition", {
+    duration: { value: 1.8, min: 0.4, max: 3.5, step: 0.05 },
+    // Fewer and larger than a spray would need: overlapping sprites are what
+    // fuse into a body. Upper bound is the cloud's pre-allocated MAX_PARTICLES.
+    particleCount: { value: 2200, min: 400, max: 8000, step: 100 },
+    particleSize: { value: 0.055, min: 0.008, max: 0.16, step: 0.002 },
+    cohesion: { value: 0.72, min: 0, max: 1, step: 0.01 },
+    blobSize: { value: 0.62, min: 0.15, max: 1.4, step: 0.01 },
+    turbulence: { value: 0.12, min: 0, max: 0.6, step: 0.005 },
+    turbulenceScale: { value: 0.9, min: 0.2, max: 4, step: 0.05 },
+    lift: { value: 0.12, min: 0, max: 0.8, step: 0.01 },
+    wave: { value: 0.35, min: 0, max: 0.85, step: 0.01 },
+    melt: { value: 0.18, min: 0, max: 0.5, step: 0.01 },
+    glow: { value: 1, min: 0, max: 4, step: 0.05 },
+    blur: { value: 0.55, min: 0, max: 1, step: 0.01 },
+    blurRadius: { value: 10, min: 2, max: 40, step: 0.5 },
+    halation: { value: 0.18, min: 0, max: 1.5, step: 0.01 },
+    erodeScale: { value: 1.6, min: 0.4, max: 8, step: 0.1 },
+    erodeSoftness: { value: 0.28, min: 0.02, max: 0.6, step: 0.01 },
+    replay: button(() => replayRef.current()),
+  });
+
   const { bloomIntensity, bloomThreshold, autoRotateSpeed, spotIntensity } = useControls("Scene", {
     bloomIntensity: { value: 0.55, min: 0, max: 3, step: 0.05 },
     bloomThreshold: { value: 1.0, min: 0, max: 1.5, step: 0.01 },
@@ -163,7 +232,9 @@ export default function Scene() {
   });
 
   // Each pin ships with its own signature enamel colour; switching variants
-  // re-seeds the picker instead of dragging the previous colour along.
+  // re-seeds the picker instead of dragging the previous colour along. The
+  // badge that is leaving keeps its old colour — the transition freezes a
+  // snapshot of these settings for it.
   useEffect(() => {
     setMaterials({ enamelColor: BADGE_PRESETS[variant].enamelColor });
   }, [variant, setMaterials]);
@@ -191,6 +262,49 @@ export default function Scene() {
     ],
   );
 
+  const transition = useMemo<TransitionSettings>(
+    () => ({
+      duration,
+      particleCount,
+      particleSize,
+      cohesion,
+      blobSize,
+      turbulence,
+      turbulenceScale,
+      lift,
+      wave,
+      melt,
+      glow,
+      blur,
+      blurRadius,
+      halation,
+      erodeScale,
+      erodeSoftness,
+    }),
+    [
+      duration,
+      particleCount,
+      particleSize,
+      cohesion,
+      blobSize,
+      turbulence,
+      turbulenceScale,
+      lift,
+      wave,
+      melt,
+      glow,
+      blur,
+      blurRadius,
+      halation,
+      erodeScale,
+      erodeSoftness,
+    ],
+  );
+
+  // The blur pass is driven per frame from inside the canvas (see
+  // BadgeTransition), so it is handed over as a ref instead of as props.
+  const dreamRef = useRef<DreamBlurEffect>(null);
+
   return (
     <main style={{ width: "100vw", height: "100vh", background: "#000" }}>
       <Canvas
@@ -203,11 +317,15 @@ export default function Scene() {
 
         <Suspense fallback={null}>
           <Studio spotIntensity={spotIntensity} />
-          <PinMaterialProvider value={materials}>
-            <PinStage speed={autoRotateSpeed}>
-              <Badge variant={variant} />
-            </PinStage>
-          </PinMaterialProvider>
+          <PinStage speed={autoRotateSpeed}>
+            <BadgeTransition
+              variant={variant}
+              materials={materials}
+              settings={transition}
+              blur={dreamRef}
+              replayRef={replayRef}
+            />
+          </PinStage>
         </Suspense>
 
         {adaptiveDpr && <AdaptiveDpr />}
@@ -224,6 +342,9 @@ export default function Scene() {
         />
 
         <EffectComposer multisampling={8}>
+          {/* First in the chain: the soft-focus haze it produces is what Bloom
+              then blooms, which is most of the dreamlike quality. */}
+          <DreamBlur ref={dreamRef} />
           <Bloom
             intensity={bloomIntensity}
             luminanceThreshold={bloomThreshold}

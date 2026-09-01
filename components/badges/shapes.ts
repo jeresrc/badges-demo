@@ -346,6 +346,38 @@ export function roundedRectShape(width: number, height: number, radius: number):
   return shape;
 }
 
+/** Stadium (fully-rounded slot) centred on (cx, cy) — e.g. a euro hang slot. */
+export function stadiumShape(width: number, height: number, cx = 0, cy = 0): Shape {
+  const r = height / 2;
+  const straight = Math.max(0, width / 2 - r);
+  const shape = new Shape();
+  shape.moveTo(cx - straight, cy - r);
+  shape.lineTo(cx + straight, cy - r);
+  shape.absarc(cx + straight, cy, r, -Math.PI / 2, Math.PI / 2, false);
+  shape.lineTo(cx - straight, cy + r);
+  shape.absarc(cx - straight, cy, r, Math.PI / 2, (Math.PI * 3) / 2, false);
+  shape.closePath();
+  return shape;
+}
+
+/**
+ * Four-point sparkle (✦): points up/down/left/right with concave sides pulled
+ * toward the centre by quadratic curves. `concavity` sets how deep the waist
+ * cuts in (0 = straight diamond, higher = thinner points).
+ */
+export function sparkleShape(vertical: number, horizontal: number, concavity = 0.18): Shape {
+  const cx = horizontal * concavity;
+  const cy = vertical * concavity;
+  const shape = new Shape();
+  shape.moveTo(0, vertical);
+  shape.quadraticCurveTo(cx, cy, horizontal, 0);
+  shape.quadraticCurveTo(cx, -cy, 0, -vertical);
+  shape.quadraticCurveTo(-cx, -cy, -horizontal, 0);
+  shape.quadraticCurveTo(-cx, cy, 0, vertical);
+  shape.closePath();
+  return shape;
+}
+
 /** Classic n-pointed star used as the raised detail on the oval pin. */
 export function starShape(pointCount: number, outerRadius: number, innerRadius: number): Shape {
   const shape = new Shape();
