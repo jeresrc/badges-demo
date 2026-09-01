@@ -106,19 +106,34 @@ export function EnamelMaterial({ color }: { color: ColorRepresentation }) {
  * the "juicy" depth; attenuation keeps the colour saturated instead of washing
  * out to clear.
  */
-export function CandyEnamelMaterial({ color }: { color: ColorRepresentation }) {
+export function CandyEnamelMaterial({
+  color,
+  vertexColors = false,
+  attenuationColor,
+  attenuationDistance = 0.25,
+  thickness = 0.6,
+}: {
+  color: ColorRepresentation;
+  /** Multiply per-vertex tints into the body colour (tonal gradients). */
+  vertexColors?: boolean;
+  /** Colour the light shifts toward as it travels through the body. */
+  attenuationColor?: ColorRepresentation;
+  attenuationDistance?: number;
+  thickness?: number;
+}) {
   const { enamelRoughness, clearcoat, clearcoatRoughness, envMapIntensity } = usePinMaterials();
 
   return (
     <meshPhysicalMaterial
       color={color}
+      vertexColors={vertexColors}
       metalness={0}
       roughness={Math.min(enamelRoughness, 0.06)}
       transmission={0.55}
-      thickness={0.6}
+      thickness={thickness}
       ior={1.45}
-      attenuationColor={color}
-      attenuationDistance={0.25}
+      attenuationColor={attenuationColor ?? color}
+      attenuationDistance={attenuationDistance}
       clearcoat={clearcoat}
       clearcoatRoughness={clearcoatRoughness}
       envMapIntensity={envMapIntensity}
