@@ -24,15 +24,15 @@ import {
 
 const OUTER = PIN_HALF_SIZE; // 1.10
 /** Double-line rim: gold wall, a black groove, then a thin gold fillet. */
-const RIM_INNER = 1.052;
-const GROOVE_INNER = 1.02;
-const FILLET_INNER = 1.0;
+const RIM_INNER = 1.07;
+const GROOVE_INNER = 1.042;
+const FILLET_INNER = 1.02;
 /** Inner gold ring separating the black text band from the red field. */
 const RING_OUTER = 0.75;
-const RING_INNER = 0.722;
+const RING_INNER = 0.726;
 const FILL = 0.006;
 
-const TEXT_RADIUS = 0.875;
+const TEXT_RADIUS = 0.885;
 const TEXT_SIZE = 0.175;
 /** The reference typeface is a condensed grotesque; Helvetiker is squeezed. */
 const TEXT_CONDENSE = 0.78;
@@ -52,8 +52,8 @@ const FONT_URL = "/fonts/typeface.json";
 
 /* Sunflower: two staggered rings of twelve petals around a dark seed head. */
 const PETAL_COUNT = 12;
-const OUTER_PETAL = { base: 0.26, tip: 0.645, width: 0.215 };
-const INNER_PETAL = { base: 0.2, tip: 0.46, width: 0.185 };
+const OUTER_PETAL = { base: 0.26, tip: 0.65, width: 0.235 };
+const INNER_PETAL = { base: 0.2, tip: 0.465, width: 0.2 };
 /** Visible gold cloisonné outline around each enamel petal. */
 const OUTLINE = 0.011;
 const HEAD_RING_OUTER = 0.312;
@@ -364,8 +364,8 @@ function useBandText() {
 export function FlowerMedal() {
   const { enamelColor, envMapIntensity } = usePinMaterials();
   /** Petals are hue-shifted from the field: burnt orange outside, sun yellow inside. */
-  const outerPetalColor = useShiftedColor(enamelColor, 0.075, 0, -0.03);
-  const innerPetalColor = useShiftedColor(enamelColor, 0.1, 0, -0.01);
+  const outerPetalColor = useShiftedColor(enamelColor, 0.062, 0, -0.03);
+  const innerPetalColor = useShiftedColor(enamelColor, 0.088, 0, -0.01);
   const attenuation = useMemo(
     () => new Color(enamelColor).offsetHSL(-0.01, 0.05, -0.08),
     [enamelColor],
