@@ -81,12 +81,20 @@ export function MetalMaterial({ metal }: { metal: MetalKind }) {
  * clearcoat lobe is what separates enamel from plastic — the body stays
  * moderately rough while the coat gives a tight, near-mirror highlight.
  */
-export function EnamelMaterial({ color }: { color: ColorRepresentation }) {
+export function EnamelMaterial({
+  color,
+  vertexColors = false,
+}: {
+  color: ColorRepresentation;
+  /** Multiply per-vertex tints into the body colour (tonal gradients). */
+  vertexColors?: boolean;
+}) {
   const { enamelRoughness, clearcoat, clearcoatRoughness, envMapIntensity } = usePinMaterials();
 
   return (
     <meshPhysicalMaterial
       color={color}
+      vertexColors={vertexColors}
       metalness={0}
       roughness={enamelRoughness}
       clearcoat={clearcoat}
