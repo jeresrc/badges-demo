@@ -3,11 +3,18 @@
 import { useMemo } from "react";
 import { useFont } from "@react-three/drei";
 import { Color, ExtrudeGeometry, Float32BufferAttribute, Shape, Vector2 } from "three";
-import type { BufferGeometry } from "three";
+import type { BufferGeometry, ColorRepresentation } from "three";
 import { TessellateModifier } from "three/examples/jsm/modifiers/TessellateModifier.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { CandyEnamelMaterial, EnamelMaterial, MetalMaterial, usePinMaterials, useShiftedColor } from "./materials";
-import { BackPlate, DetailPiece, EnamelPiece, RimPiece } from "./parts";
+import {
+  CandyEnamelMaterial,
+  EnamelMaterial,
+  MetalMaterial,
+  PinMaterialProvider,
+  usePinMaterials,
+  useShiftedColor,
+} from "./materials";
+import { BackPlate } from "./parts";
 import {
   ENAMEL_RECESS,
   PIN_HALF_SIZE,
@@ -20,72 +27,97 @@ import {
 } from "./shapes";
 
 /* ------------------------------------------------------------------------ */
-/* Proportions measured off the reference (refs/flower-medal.jpg)            */
+/* Proportions measured off refs/flower-medal.jpg with an angle-averaged      */
+/* radial profile (R = outer radius). Every radius below is `fraction × R`.   */
 
-const OUTER = PIN_HALF_SIZE; // 1.10
-/** Double-line rim: gold wall, a black groove, then a thin gold fillet. */
-const RIM_INNER = 1.07;
-const GROOVE_INNER = 1.042;
-const FILLET_INNER = 1.02;
-/** Inner gold ring separating the black text band from the red field. */
-const RING_OUTER = 0.75;
-const RING_INNER = 0.726;
-const FILL = 0.006;
+const R = PIN_HALF_SIZE; // 1.10
+const at = (fraction: number) => fraction * R;
 
-const TEXT_RADIUS = 0.885;
-const TEXT_SIZE = 0.175;
+/* Rim: a channel — outer wire glints at 0.995R, inner wire at 0.958R, and the
+ * gold floor between (0.965–0.985R) reads as dark satin gold. */
+const RIM_WIRE_OUTER: [number, number] = [at(0.983), R];
+const RIM_WIRE_INNER: [number, number] = [at(0.949), at(0.965)];
+/** Floor closes the channel; a hair inside both wires so no faces are coplanar. */
+const RIM_FLOOR: [number, number] = [at(0.955), at(0.99)];
+
+/* Inner ring: the same channel form, glints at 0.665R and 0.70R. */
+const RING_WIRE_OUTER: [number, number] = [at(0.692), at(0.712)];
+const RING_WIRE_INNER: [number, number] = [at(0.656), at(0.676)];
+const RING_FLOOR: [number, number] = [at(0.662), at(0.705)];
+/** Red field runs out to the inner wire. */
+const FIELD_RADIUS = at(0.66);
+
+/** Black band between the ring and the rim. */
+const BAND: [number, number] = [at(0.70), at(0.958)];
+
+const WIRE_DEPTH = 0.05;
+/** Wires are half-round: bevel ≈ half the width so the crest is a rounded ridge. */
+const WIRE_BEVEL = 0.008;
+const WIRE_Z = RIM_FRONT - WIRE_DEPTH / 2 - WIRE_BEVEL;
+const FLOOR_DEPTH = 0.03;
+const FLOOR_Z = RIM_FRONT - 0.026 - FLOOR_DEPTH / 2;
+
+/* Text band: cap height 0.16R centred on 0.83R. */
+const TEXT_RADIUS = at(0.83);
+const TEXT_SIZE = 0.225;
 /** The reference typeface is a condensed grotesque; Helvetiker is squeezed. */
-const TEXT_CONDENSE = 0.78;
-const TEXT_TRACKING = 0.01;
-const TEXT_DEPTH = 0.04;
-const TEXT_BEVEL = 0.008;
+const TEXT_CONDENSE = 0.66;
+const TEXT_TRACKING = 0.004;
+const TEXT_DEPTH = 0.036;
+const TEXT_BEVEL = 0.006;
 /** Glyph bases sink just into the black enamel so they read as struck metal. */
 const TEXT_Z = RIM_FRONT - ENAMEL_RECESS - 0.008 + TEXT_DEPTH / 2;
 /** Three repeats read clockwise, tops outward — centre angle of each. */
 const TEXT_CENTERS = [45, -66, 190];
 const STAR_ANGLES = [-10.5, -118];
+const STAR_OUTER = 0.07;
+const STAR_INNER = 0.03;
 /** Long curved rule filling the leftover gap between the last BOY and FLOWER. */
 const RULE_ARC: [number, number] = [138, 97];
-const RULE_THICKNESS = 0.03;
+const RULE_THICKNESS = 0.026;
 
 const FONT_URL = "/fonts/typeface.json";
 
-/* Sunflower: two staggered rings of twelve petals around a dark seed head. */
+/* Sunflower: two staggered rings of twelve petals around a dark seed head.
+ * Inner petals run pure yellow to 0.455R and tip out near 0.48R; outer tips
+ * reach 0.60R; the head fills 0.285R. Widths make neighbours just touch. */
 const PETAL_COUNT = 12;
-const OUTER_PETAL = { base: 0.26, tip: 0.65, width: 0.235 };
-const INNER_PETAL = { base: 0.2, tip: 0.465, width: 0.2 };
+const OUTER_PETAL = { base: 0.25, tip: at(0.6), width: 0.265 };
+const INNER_PETAL = { base: 0.19, tip: at(0.48), width: 0.205 };
 /** Visible gold cloisonné outline around each enamel petal. */
-const OUTLINE = 0.011;
-const HEAD_RING_OUTER = 0.312;
-const HEAD_RING_INNER = 0.297;
+const OUTLINE = 0.01;
+const HEAD_RADIUS = at(0.285);
+const HEAD_WIRE: [number, number] = [HEAD_RADIUS - 0.004, HEAD_RADIUS + 0.012];
 
 /* Z stack. `ExtrudeGeometry` places the caps at ±(depth / 2 + bevel) once
- * centred, so every "top" below is computed with `topOf()`. The field sits
- * just below the inner ring; each layer of the flower stands a little prouder
- * than the last, and each enamel pour rises from its gold cell wall. */
+ * centred, so every "top" below is computed with `topOf()`. */
 const topOf = (z: number, depth: number, bevel: number) => z + depth / 2 + bevel;
 
 const FIELD_Z = 0.006;
 const FIELD_DEPTH = 0.04;
 const FIELD_BEVEL = 0.012;
-const FIELD_SHOULDER = 0.016;
+const FIELD_SHOULDER = 0.014;
 
 const PETAL_GOLD_DEPTH = 0.05;
-const PETAL_GOLD_BEVEL = 0.007;
+const PETAL_GOLD_BEVEL = 0.005;
 const PETAL_ENAMEL_DEPTH = 0.03;
-const PETAL_ENAMEL_BEVEL = 0.005;
-/** How far the pillow of each petal rises above its gold cell wall. */
-const PETAL_SHOULDER = 0.016;
+const PETAL_ENAMEL_BEVEL = 0.004;
+/** Gentle continuous dome: the reference petals are nearly flat. */
+const PETAL_SHOULDER = 0.009;
 const OUTER_GOLD_Z = 0.04;
-const INNER_GOLD_Z = 0.056;
-/** The head must clear the inner petals' pillows so their bases stay buried. */
-const HEAD_GOLD_Z = 0.088;
+const INNER_GOLD_Z = 0.054;
+/** The head must clear the inner petals' domes so their bases stay buried. */
+const HEAD_GOLD_Z = 0.076;
 const HEAD_ENAMEL_DEPTH = 0.03;
-const HEAD_ENAMEL_BEVEL = 0.008;
+const HEAD_ENAMEL_BEVEL = 0.006;
 
 /** Enamel slab centre so its flat cap sits `lift` above a gold cap at `goldTop`. */
 const enamelZFor = (goldTop: number, depth: number, bevel: number, lift = 0.002) =>
   goldTop + lift - depth / 2 - bevel;
+
+/* Sampled off the reference: rendered sRGB targets. */
+const HEAD_COLOR = "#4c1c06";
+const BAND_COLOR = "#120a04";
 
 /* ------------------------------------------------------------------------ */
 
@@ -206,7 +238,8 @@ function tintResin(
 
 /**
  * Sunflower petal pointing up the +Y axis: a soft leaf that is widest a little
- * below its middle and closes to a crisp tip.
+ * above its middle and closes to a crisp tip. The base is buried under the
+ * next layer so its shape hardly matters.
  */
 function petalShape({ base, tip, width }: { base: number; tip: number; width: number }): Shape {
   const length = tip - base;
@@ -240,15 +273,16 @@ function ringOf(geometry: BufferGeometry, count: number, phase: number): BufferG
   return merged;
 }
 
+type Tint = { edge: [number, number, number]; hot: [number, number, number] };
+/** Petals deepen only slightly at the wall: the reference enamel is flat and even. */
+const OUTER_TINT: Tint = { edge: [0.94, 0.78, 0.55], hot: [0, 0, 0] };
+const INNER_TINT: Tint = { edge: [0.96, 0.84, 0.55], hot: [0, 0, 0] };
+
 /**
- * A ring of petals: die-struck gold outline with a pillowed enamel pour set
- * inside it. Built once pointing up and repeated around the head.
+ * A ring of petals: die-struck gold outline with a gently domed enamel pour
+ * set inside it. Built once pointing up and repeated around the head.
  */
-function usePetalRing(
-  spec: { base: number; tip: number; width: number },
-  phase: number,
-  tint: { edge: [number, number, number]; hot: [number, number, number] },
-) {
+function usePetalRing(spec: { base: number; tip: number; width: number }, phase: number, tint: Tint) {
   return useMemo(() => {
     const gold = petalShape(spec);
     const outline = gold.getPoints(40);
@@ -259,17 +293,17 @@ function usePetalRing(
       depth: PETAL_GOLD_DEPTH,
       bevel: PETAL_GOLD_BEVEL,
       curveSegments: 40,
-      bevelSegments: 4,
+      bevelSegments: 3,
     });
     const enamel = tintResin(
       pourResin(
         buildResinSlab(polygonShape(cell), PETAL_ENAMEL_DEPTH, PETAL_ENAMEL_BEVEL, 0.02),
         edge,
         PETAL_SHOULDER,
-        spec.width * 0.3,
+        spec.width * 0.45,
       ),
       edge,
-      spec.width * 0.3,
+      spec.width * 0.18,
       tint.edge,
       tint.hot,
     );
@@ -280,10 +314,54 @@ function usePetalRing(
   }, [spec, phase, tint]);
 }
 
-type Tint = { edge: [number, number, number]; hot: [number, number, number] };
-/** Outer petals deepen to burnt orange at the wall; inner ones stay sunnier. */
-const OUTER_TINT: Tint = { edge: [0.95, 0.7, 0.4], hot: [0, 0, 0] };
-const INNER_TINT: Tint = { edge: [0.97, 0.78, 0.4], hot: [0, 0.02, 0] };
+/** Half-round gold wire ring. */
+function useWire([inner, outer]: [number, number]) {
+  return useMemo(
+    () =>
+      extrudeCentered(circleShape(outer, inner), {
+        depth: WIRE_DEPTH,
+        bevel: Math.min(WIRE_BEVEL, (outer - inner) / 2 - 0.001),
+        curveSegments: 128,
+        bevelSegments: 5,
+      }),
+    [inner, outer],
+  );
+}
+
+/** Flat gold floor of a channel, set below the wires. */
+function useFloor([inner, outer]: [number, number]) {
+  return useMemo(
+    () =>
+      extrudeCentered(circleShape(outer, inner), {
+        depth: FLOOR_DEPTH,
+        bevel: 0.003,
+        curveSegments: 128,
+        bevelSegments: 2,
+      }),
+    [inner, outer],
+  );
+}
+
+/**
+ * Satin enamel for the petals: the reference petals are evenly saturated with
+ * broad, soft highlights — an opaque body with a slightly rough coat rather
+ * than the wet mirror of candy glass.
+ */
+function PetalMaterial({ color }: { color: ColorRepresentation }) {
+  const { envMapIntensity } = usePinMaterials();
+  return (
+    <meshPhysicalMaterial
+      color={color}
+      vertexColors
+      metalness={0}
+      roughness={0.42}
+      clearcoat={0.8}
+      clearcoatRoughness={0.28}
+      reflectivity={0.35}
+      envMapIntensity={envMapIntensity * 0.75}
+    />
+  );
+}
 
 /**
  * "FLOWER BOY" laid along the band three times, glyph tops pointing outward,
@@ -327,7 +405,7 @@ function useBandText() {
     }
 
     for (const deg of STAR_ANGLES) {
-      const star = extrudeCentered(starShape(5, 0.062, 0.028), {
+      const star = extrudeCentered(starShape(5, STAR_OUTER, STAR_INNER), {
         depth: TEXT_DEPTH,
         bevel: TEXT_BEVEL,
         curveSegments: 4,
@@ -355,33 +433,62 @@ function useBandText() {
 }
 
 /**
- * Sunflower medal following refs/flower-medal.jpg: gold double-line rim, a
- * glossy black band carrying raised "FLOWER BOY ★" lettering, a thin inner
- * ring, then a hot red-orange candy-glass field with a twelve-and-twelve
- * petal sunflower in pillowed yellow enamel around a dark seed head — every
- * cell outlined in struck gold.
+ * Sunflower medal following refs/flower-medal.jpg: channel-form gold rim and
+ * inner ring (two fine wires over a dark satin floor), a black band carrying
+ * raised "FLOWER BOY ★" lettering, then a hot red-orange candy-glass field
+ * with a twelve-and-twelve petal sunflower in flat yellow enamel around a
+ * dark seed head — every cell outlined in fine struck gold.
+ *
+ * The reference gold is satin and warm rather than mirror-bright, so the
+ * shared settings are re-provided with a rougher metal for this badge only.
  */
 export function FlowerMedal() {
+  const settings = usePinMaterials();
+  const satin = useMemo(
+    () => ({ ...settings, metalRoughness: Math.max(settings.metalRoughness, 0.3) }),
+    [settings],
+  );
+  return (
+    <PinMaterialProvider value={satin}>
+      <FlowerMedalBody />
+    </PinMaterialProvider>
+  );
+}
+
+function FlowerMedalBody() {
   const { enamelColor, envMapIntensity } = usePinMaterials();
-  /** Petals are hue-shifted from the field: burnt orange outside, sun yellow inside. */
-  const outerPetalColor = useShiftedColor(enamelColor, 0.062, 0, -0.03);
-  const innerPetalColor = useShiftedColor(enamelColor, 0.088, 0, -0.01);
+  /** Petals are hue-shifted from the field toward the sampled amber / yellow. */
+  const outerPetalColor = useShiftedColor(enamelColor, 0.07, -0.1, -0.02);
+  const innerPetalColor = useShiftedColor(enamelColor, 0.085, -0.03, -0.04);
   const attenuation = useMemo(
-    () => new Color(enamelColor).offsetHSL(-0.01, 0.05, -0.08),
+    () => new Color(enamelColor).offsetHSL(-0.005, 0.05, -0.05),
     [enamelColor],
   );
+  /** Field glows in the reference (overexposed enamel); a little emission gets there. */
+  const fieldEmissive = useMemo(() => new Color(enamelColor).offsetHSL(0, 0, -0.1), [enamelColor]);
 
-  const back = useMemo(() => circleShape(OUTER - 0.025), []);
-  const rim = useMemo(() => circleShape(OUTER, RIM_INNER), []);
-  const groove = useMemo(() => circleShape(RIM_INNER + FILL, GROOVE_INNER - FILL), []);
-  const fillet = useMemo(() => circleShape(GROOVE_INNER, FILLET_INNER), []);
-  const band = useMemo(() => circleShape(FILLET_INNER + FILL, RING_OUTER - FILL), []);
-  const ring = useMemo(() => circleShape(RING_OUTER, RING_INNER), []);
-  const headRingGeometry = useMemo(
+  const back = useMemo(() => circleShape(R - 0.02), []);
+  const rimOuter = useWire(RIM_WIRE_OUTER);
+  const rimInner = useWire(RIM_WIRE_INNER);
+  const rimFloor = useFloor(RIM_FLOOR);
+  const ringOuter = useWire(RING_WIRE_OUTER);
+  const ringInner = useWire(RING_WIRE_INNER);
+  const ringFloor = useFloor(RING_FLOOR);
+  const bandGeometry = useMemo(
     () =>
-      extrudeCentered(circleShape(HEAD_RING_OUTER, HEAD_RING_INNER), {
+      extrudeCentered(circleShape(BAND[1], BAND[0]), {
+        depth: 0.04,
+        bevel: 0.004,
+        curveSegments: 128,
+        bevelSegments: 2,
+      }),
+    [],
+  );
+  const headWireGeometry = useMemo(
+    () =>
+      extrudeCentered(circleShape(HEAD_WIRE[1], HEAD_WIRE[0]), {
         depth: PETAL_GOLD_DEPTH,
-        bevel: PETAL_GOLD_BEVEL,
+        bevel: 0.006,
         curveSegments: 96,
         bevelSegments: 4,
       }),
@@ -389,25 +496,25 @@ export function FlowerMedal() {
   );
 
   const fieldGeometry = useMemo(() => {
-    const edge: EdgeDistance = (x, y) => RING_INNER - Math.hypot(x, y);
+    const edge: EdgeDistance = (x, y) => FIELD_RADIUS - Math.hypot(x, y);
     const geometry = pourResin(
-      buildResinSlab(circleShape(RING_INNER + 0.005), FIELD_DEPTH, FIELD_BEVEL, 0.05),
+      buildResinSlab(circleShape(FIELD_RADIUS + 0.004), FIELD_DEPTH, FIELD_BEVEL, 0.05),
       edge,
       FIELD_SHOULDER,
-      0.1,
+      0.08,
     );
-    return tintResin(geometry, edge, 0.1, [0.92, 0.6, 0.48], [0.05, 0.04, -0.02]);
+    return tintResin(geometry, edge, 0.06, [0.9, 0.62, 0.5], [0.02, 0.02, 0]);
   }, []);
 
   const headGeometry = useMemo(() => {
-    const edge: EdgeDistance = (x, y) => HEAD_RING_INNER - Math.hypot(x, y);
+    const edge: EdgeDistance = (x, y) => HEAD_RADIUS - Math.hypot(x, y);
     const geometry = pourResin(
-      buildResinSlab(circleShape(HEAD_RING_INNER + 0.005), HEAD_ENAMEL_DEPTH, HEAD_ENAMEL_BEVEL, 0.04),
+      buildResinSlab(circleShape(HEAD_RADIUS + 0.004), HEAD_ENAMEL_DEPTH, HEAD_ENAMEL_BEVEL, 0.04),
       edge,
-      0.01,
-      0.14,
+      0.006,
+      0.12,
     );
-    return tintResin(geometry, edge, 0.08, [0.7, 0.6, 0.6], [0.12, 0.08, 0.02]);
+    return tintResin(geometry, edge, 0.06, [0.8, 0.7, 0.7], [0.04, 0.03, 0.01]);
   }, []);
 
   const outerPetals = usePetalRing(OUTER_PETAL, 0, OUTER_TINT);
@@ -424,28 +531,48 @@ export function FlowerMedal() {
     PETAL_ENAMEL_DEPTH,
     PETAL_ENAMEL_BEVEL,
   );
-  // The seed head sits a hair below its collar: a flat, dry-looking pour.
+  // The seed head sits a hair below its wire: a flat, dry-looking pour.
   const headEnamelZ = enamelZFor(
-    topOf(HEAD_GOLD_Z, PETAL_GOLD_DEPTH, PETAL_GOLD_BEVEL),
+    topOf(HEAD_GOLD_Z, PETAL_GOLD_DEPTH, 0.006),
     HEAD_ENAMEL_DEPTH,
     HEAD_ENAMEL_BEVEL,
-    -0.012,
+    -0.008,
   );
+  const bandZ = RIM_FRONT - ENAMEL_RECESS - 0.02 - 0.004;
 
   return (
     <group name="flower-medal">
-      {/* Gold shell: double-line rim with a black groove between the lines. */}
       <BackPlate shape={back} metal="gold" />
-      <RimPiece shape={rim} metal="gold" />
-      <EnamelPiece shape={groove} color="#070605" />
-      <DetailPiece shape={fillet} metal="gold" />
 
-      {/* Glossy black band with the struck lettering. */}
-      <EnamelPiece shape={band} color="#080706" />
+      {/* Rim channel: two fine wires over a dark satin floor. */}
+      <mesh geometry={rimOuter} position={[0, 0, WIRE_Z]} castShadow receiveShadow>
+        <MetalMaterial metal="gold" />
+      </mesh>
+      <mesh geometry={rimFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
+        <MetalMaterial metal="gold" />
+      </mesh>
+      <mesh geometry={rimInner} position={[0, 0, WIRE_Z]} receiveShadow>
+        <MetalMaterial metal="gold" />
+      </mesh>
+
+      {/* Black band with the struck lettering. */}
+      <mesh geometry={bandGeometry} position={[0, 0, bandZ]} receiveShadow>
+        <EnamelMaterial color={BAND_COLOR} />
+      </mesh>
       <mesh geometry={bandText} position={[0, 0, TEXT_Z]} receiveShadow>
         <MetalMaterial metal="gold" />
       </mesh>
-      <DetailPiece shape={ring} metal="gold" />
+
+      {/* Inner ring channel. */}
+      <mesh geometry={ringOuter} position={[0, 0, WIRE_Z]} receiveShadow>
+        <MetalMaterial metal="gold" />
+      </mesh>
+      <mesh geometry={ringFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
+        <MetalMaterial metal="gold" />
+      </mesh>
+      <mesh geometry={ringInner} position={[0, 0, WIRE_Z]} receiveShadow>
+        <MetalMaterial metal="gold" />
+      </mesh>
 
       {/* Red-orange candy glass field, meniscus rising against the ring. */}
       <mesh geometry={fieldGeometry} position={[0, 0, FIELD_Z]} receiveShadow>
@@ -453,40 +580,42 @@ export function FlowerMedal() {
           color={enamelColor}
           vertexColors
           attenuationColor={attenuation}
-          attenuationDistance={0.45}
-          thickness={0.8}
+          attenuationDistance={0.5}
+          thickness={0.6}
+          emissive={fieldEmissive}
+          emissiveIntensity={0.22}
         />
       </mesh>
 
-      {/* Sunflower: outer ring of orange petals, inner ring of yellow ones. */}
+      {/* Sunflower: outer ring of amber petals, inner ring of yellow ones. */}
       <mesh geometry={outerPetals.gold} position={[0, 0, OUTER_GOLD_Z]} receiveShadow>
         <MetalMaterial metal="gold" />
       </mesh>
       <mesh geometry={outerPetals.enamel} position={[0, 0, outerEnamelZ]} receiveShadow>
-        <EnamelMaterial color={outerPetalColor} vertexColors />
+        <PetalMaterial color={outerPetalColor} />
       </mesh>
       <mesh geometry={innerPetals.gold} position={[0, 0, INNER_GOLD_Z]} receiveShadow>
         <MetalMaterial metal="gold" />
       </mesh>
       <mesh geometry={innerPetals.enamel} position={[0, 0, innerEnamelZ]} receiveShadow>
-        <EnamelMaterial color={innerPetalColor} vertexColors />
+        <PetalMaterial color={innerPetalColor} />
       </mesh>
 
-      {/* Seed head: dark chocolate enamel in a gold collar. */}
-      <mesh geometry={headRingGeometry} position={[0, 0, HEAD_GOLD_Z]} receiveShadow>
+      {/* Seed head: dark chocolate enamel in a fine gold wire. */}
+      <mesh geometry={headWireGeometry} position={[0, 0, HEAD_GOLD_Z]} receiveShadow>
         <MetalMaterial metal="gold" />
       </mesh>
       <mesh geometry={headGeometry} position={[0, 0, headEnamelZ]} receiveShadow>
         {/* Drier than the petals: a satin coat so the head reads as a dark
             seed disc rather than a black mirror. */}
         <meshPhysicalMaterial
-          color="#4c2209"
+          color={HEAD_COLOR}
           vertexColors
           metalness={0}
-          roughness={0.45}
-          clearcoat={0.35}
-          clearcoatRoughness={0.25}
-          envMapIntensity={envMapIntensity * 0.7}
+          roughness={0.55}
+          clearcoat={0.3}
+          clearcoatRoughness={0.3}
+          envMapIntensity={envMapIntensity * 0.5}
         />
       </mesh>
     </group>

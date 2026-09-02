@@ -120,6 +120,8 @@ export function CandyEnamelMaterial({
   attenuationColor,
   attenuationDistance = 0.25,
   thickness = 0.6,
+  emissive,
+  emissiveIntensity = 0,
 }: {
   color: ColorRepresentation;
   /** Multiply per-vertex tints into the body colour (tonal gradients). */
@@ -128,6 +130,9 @@ export function CandyEnamelMaterial({
   attenuationColor?: ColorRepresentation;
   attenuationDistance?: number;
   thickness?: number;
+  /** Faint self-glow for enamel that reads overexposed in the reference shot. */
+  emissive?: ColorRepresentation;
+  emissiveIntensity?: number;
 }) {
   const { enamelRoughness, clearcoat, clearcoatRoughness, envMapIntensity } = usePinMaterials();
 
@@ -142,6 +147,8 @@ export function CandyEnamelMaterial({
       ior={1.45}
       attenuationColor={attenuationColor ?? color}
       attenuationDistance={attenuationDistance}
+      emissive={emissive ?? "#000000"}
+      emissiveIntensity={emissiveIntensity}
       clearcoat={clearcoat}
       clearcoatRoughness={clearcoatRoughness}
       envMapIntensity={envMapIntensity}

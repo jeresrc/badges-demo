@@ -216,7 +216,7 @@ export default function Scene() {
         <color attach="background" args={["#000000"]} />
 
         <Suspense fallback={null}>
-          <Studio spotIntensity={spotIntensity} />
+          <Studio spotIntensity={spotIntensity} variant={variant} />
           <PinStage speed={autoRotateSpeed}>
             <BadgeTransition
               variant={variant}
