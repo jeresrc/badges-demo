@@ -77,6 +77,98 @@ export function MetalMaterial({ metal }: { metal: MetalKind }) {
 }
 
 /**
+ * Cloisonné alloy. The FLOWER BOY reference gold is pale and warm — its glints
+ * read as light tan (~#b38b67) rather than saturated yellow — so every gold
+ * surface on the cloisonné pins uses this alloy instead of the shared
+ * die-struck gold, with roughness chosen per part (polished wires, satin
+ * lettering).
+ */
+export function AlloyMaterial({ roughness }: { roughness?: number }) {
+  const { metalness, metalRoughness, envMapIntensity } = usePinMaterials();
+  return (
+    <meshStandardMaterial
+      color="#f4d098"
+      metalness={metalness}
+      roughness={Math.max(0.02, roughness ?? metalRoughness)}
+      envMapIntensity={envMapIntensity * 1.2}
+    />
+  );
+}
+
+/**
+ * Cloisonné walls between cells: in the reference they read as dark lines (the
+ * wall tops sit in the enamel's shadow), so they get a deeper, softer finish
+ * than the wires and letters.
+ */
+export function WallMaterial() {
+  const { envMapIntensity } = usePinMaterials();
+  return (
+    <meshStandardMaterial color="#b68a50" metalness={1} roughness={0.35} envMapIntensity={envMapIntensity * 0.5} />
+  );
+}
+
+/**
+ * Gold in the bottom of a channel: the reference floors read as dark warm gold
+ * (~#7c4314) because the wires shade them, so the floor gets a duller, dimmer
+ * finish than the wires standing over it.
+ */
+export function FloorMaterial() {
+  const { envMapIntensity } = usePinMaterials();
+  return (
+    <meshStandardMaterial color="#8a6230" metalness={1} roughness={0.5} envMapIntensity={envMapIntensity * 0.35} />
+  );
+}
+
+/**
+ * Satin hard enamel for cloisonné cells: the reference cells are evenly
+ * saturated with broad, soft highlights — an opaque body with a slightly rough
+ * coat rather than the wet mirror of candy glass. Expects per-vertex tints.
+ */
+export function SatinEnamelMaterial({
+  color,
+  envScale = 0.3,
+  emissiveIntensity = 0.34,
+}: {
+  color: ColorRepresentation;
+  envScale?: number;
+  emissiveIntensity?: number;
+}) {
+  const { envMapIntensity } = usePinMaterials();
+  return (
+    <meshPhysicalMaterial
+      color={color}
+      vertexColors
+      metalness={0}
+      roughness={0.5}
+      clearcoat={0.7}
+      clearcoatRoughness={0.14}
+      reflectivity={0.12}
+      envMapIntensity={envMapIntensity * envScale}
+      emissive={color}
+      emissiveIntensity={emissiveIntensity}
+    />
+  );
+}
+
+/**
+ * Deep black lacquer for the lettering band: a softer coat than hard enamel so
+ * the studio panels never lift it to grey — the reference band stays black.
+ */
+export function BandLacquerMaterial({ color = "#0c0703" }: { color?: ColorRepresentation }) {
+  const { envMapIntensity } = usePinMaterials();
+  return (
+    <meshPhysicalMaterial
+      color={color}
+      metalness={0}
+      roughness={0.35}
+      clearcoat={0.6}
+      clearcoatRoughness={0.18}
+      envMapIntensity={envMapIntensity * 0.45}
+    />
+  );
+}
+
+/**
  * Hard enamel: an opaque pigmented body under a glassy fired-in coat. The
  * clearcoat lobe is what separates enamel from plastic — the body stays
  * moderately rough while the coat gives a tight, near-mirror highlight.
