@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useFont } from "@react-three/drei";
 import { Color, ExtrudeGeometry, Float32BufferAttribute, Shape, Vector2 } from "three";
-import type { BufferGeometry, ColorRepresentation } from "three";
+import type { BufferGeometry } from "three";
 import { TessellateModifier } from "three/examples/jsm/modifiers/TessellateModifier.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
@@ -35,33 +35,33 @@ const at = (fraction: number) => fraction * R;
 
 /* Rim: a channel — outer wire glints at 0.995R, inner wire at 0.958R, and the
  * gold floor between (0.965–0.985R) reads as dark satin gold. */
-const RIM_WIRE_OUTER: [number, number] = [at(0.983), R];
-const RIM_WIRE_INNER: [number, number] = [at(0.949), at(0.965)];
+const RIM_WIRE_OUTER: [number, number] = [at(0.986), R];
+const RIM_WIRE_INNER: [number, number] = [at(0.954), at(0.967)];
 /** Floor closes the channel; a hair inside both wires so no faces are coplanar. */
-const RIM_FLOOR: [number, number] = [at(0.955), at(0.99)];
+const RIM_FLOOR: [number, number] = [at(0.96), at(0.992)];
 
 /* Inner ring: the same channel form, glints at 0.665R and 0.70R. */
-const RING_WIRE_OUTER: [number, number] = [at(0.692), at(0.712)];
-const RING_WIRE_INNER: [number, number] = [at(0.656), at(0.676)];
-const RING_FLOOR: [number, number] = [at(0.662), at(0.705)];
+const RING_WIRE_OUTER: [number, number] = [at(0.693), at(0.708)];
+const RING_WIRE_INNER: [number, number] = [at(0.661), at(0.676)];
+const RING_FLOOR: [number, number] = [at(0.668), at(0.70)];
 /** Red field runs out to the inner wire. */
-const FIELD_RADIUS = at(0.66);
+const FIELD_RADIUS = at(0.665);
 
 /** Black band between the ring and the rim. */
-const BAND: [number, number] = [at(0.70), at(0.958)];
+const BAND: [number, number] = [at(0.703), at(0.96)];
 
 const WIRE_DEPTH = 0.05;
 /** Wires are half-round: bevel ≈ half the width so the crest is a rounded ridge. */
-const WIRE_BEVEL = 0.008;
+const WIRE_BEVEL = 0.007;
 const WIRE_Z = RIM_FRONT - WIRE_DEPTH / 2 - WIRE_BEVEL;
 const FLOOR_DEPTH = 0.03;
-const FLOOR_Z = RIM_FRONT - 0.026 - FLOOR_DEPTH / 2;
+const FLOOR_Z = RIM_FRONT - 0.034 - FLOOR_DEPTH / 2;
 
 /* Text band: cap height 0.16R centred on 0.83R. */
 const TEXT_RADIUS = at(0.83);
-const TEXT_SIZE = 0.225;
+const TEXT_SIZE = 0.215;
 /** The reference typeface is a condensed grotesque; Helvetiker is squeezed. */
-const TEXT_CONDENSE = 0.66;
+const TEXT_CONDENSE = 0.68;
 const TEXT_TRACKING = 0.004;
 const TEXT_DEPTH = 0.036;
 const TEXT_BEVEL = 0.006;
@@ -87,7 +87,7 @@ const INNER_PETAL = { base: 0.19, tip: at(0.48), width: 0.205 };
 /** Visible gold cloisonné outline around each enamel petal. */
 const OUTLINE = 0.01;
 const HEAD_RADIUS = at(0.285);
-const HEAD_WIRE: [number, number] = [HEAD_RADIUS - 0.004, HEAD_RADIUS + 0.012];
+const HEAD_WIRE: [number, number] = [HEAD_RADIUS - 0.003, HEAD_RADIUS + 0.008];
 
 /* Z stack. `ExtrudeGeometry` places the caps at ±(depth / 2 + bevel) once
  * centred, so every "top" below is computed with `topOf()`. */
@@ -116,7 +116,7 @@ const enamelZFor = (goldTop: number, depth: number, bevel: number, lift = 0.002)
   goldTop + lift - depth / 2 - bevel;
 
 /* Sampled off the reference: rendered sRGB targets. */
-const HEAD_COLOR = "#4c1c06";
+const HEAD_COLOR = "#431705";
 const BAND_COLOR = "#120a04";
 
 /* ------------------------------------------------------------------------ */
@@ -347,20 +347,32 @@ function useFloor([inner, outer]: [number, number]) {
  * broad, soft highlights — an opaque body with a slightly rough coat rather
  * than the wet mirror of candy glass.
  */
-function PetalMaterial({ color }: { color: ColorRepresentation }) {
+function PetalMaterial({ color }: { color: Color }) {
   const { envMapIntensity } = usePinMaterials();
   return (
     <meshPhysicalMaterial
       color={color}
       vertexColors
       metalness={0}
-      roughness={0.42}
-      clearcoat={0.8}
-      clearcoatRoughness={0.28}
-      reflectivity={0.35}
-      envMapIntensity={envMapIntensity * 0.75}
+      roughness={0.45}
+      clearcoat={0.55}
+      clearcoatRoughness={0.3}
+      reflectivity={0.3}
+      envMapIntensity={envMapIntensity * 0.6}
+      emissive={color}
+      emissiveIntensity={0.28}
     />
   );
+}
+
+/**
+ * Gold in the bottom of a channel: the reference floors read as dark warm
+ * gold (~#7c4314) because the wires shade them, so the floor gets a duller,
+ * dimmer finish than the wires standing over it.
+ */
+function FloorMaterial() {
+  const { envMapIntensity } = usePinMaterials();
+  return <meshStandardMaterial color="#e2b060" metalness={1} roughness={0.45} envMapIntensity={envMapIntensity * 0.4} />;
 }
 
 /**
@@ -378,6 +390,13 @@ function useBandText() {
     const advances = chars.map((char) => (glyphs[char]?.ha ?? glyphs["a"]?.ha ?? 500) * scale);
     const total = advances.reduce((sum, a) => sum + a, 0) + TEXT_TRACKING * (chars.length - 1);
 
+    // Centre every glyph on the cap height of a reference capital so the
+    // baseline sits at a constant radius (glyph bboxes differ per letter).
+    const probe = extrudeCentered(font.generateShapes("E", TEXT_SIZE), { depth: 0.01, bevel: 0 });
+    probe.computeBoundingBox();
+    const capCentre = (probe.boundingBox!.min.y + probe.boundingBox!.max.y) / 2;
+    probe.dispose();
+
     const pieces: BufferGeometry[] = [];
     for (const centre of TEXT_CENTERS) {
       let cursor = 0;
@@ -393,7 +412,7 @@ function useBandText() {
           });
           glyph.computeBoundingBox();
           const box = glyph.boundingBox!;
-          glyph.translate(-(box.min.x + box.max.x) / 2, -TEXT_SIZE * 0.36, 0);
+          glyph.translate(-(box.min.x + box.max.x) / 2, -capCentre, 0);
           glyph.scale(TEXT_CONDENSE, 1, 1);
           const angle = start - (cursor + advance / 2) / TEXT_RADIUS;
           glyph.rotateZ(angle - Math.PI / 2);
@@ -445,7 +464,7 @@ function useBandText() {
 export function FlowerMedal() {
   const settings = usePinMaterials();
   const satin = useMemo(
-    () => ({ ...settings, metalRoughness: Math.max(settings.metalRoughness, 0.3) }),
+    () => ({ ...settings, metalRoughness: Math.max(settings.metalRoughness, 0.2) }),
     [settings],
   );
   return (
@@ -459,7 +478,7 @@ function FlowerMedalBody() {
   const { enamelColor, envMapIntensity } = usePinMaterials();
   /** Petals are hue-shifted from the field toward the sampled amber / yellow. */
   const outerPetalColor = useShiftedColor(enamelColor, 0.07, -0.1, -0.02);
-  const innerPetalColor = useShiftedColor(enamelColor, 0.085, -0.03, -0.04);
+  const innerPetalColor = useShiftedColor(enamelColor, 0.085, -0.03, -0.02);
   const attenuation = useMemo(
     () => new Color(enamelColor).offsetHSL(-0.005, 0.05, -0.05),
     [enamelColor],
@@ -549,7 +568,7 @@ function FlowerMedalBody() {
         <MetalMaterial metal="gold" />
       </mesh>
       <mesh geometry={rimFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
-        <MetalMaterial metal="gold" />
+        <FloorMaterial />
       </mesh>
       <mesh geometry={rimInner} position={[0, 0, WIRE_Z]} receiveShadow>
         <MetalMaterial metal="gold" />
@@ -568,7 +587,7 @@ function FlowerMedalBody() {
         <MetalMaterial metal="gold" />
       </mesh>
       <mesh geometry={ringFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
-        <MetalMaterial metal="gold" />
+        <FloorMaterial />
       </mesh>
       <mesh geometry={ringInner} position={[0, 0, WIRE_Z]} receiveShadow>
         <MetalMaterial metal="gold" />
@@ -583,7 +602,7 @@ function FlowerMedalBody() {
           attenuationDistance={0.5}
           thickness={0.6}
           emissive={fieldEmissive}
-          emissiveIntensity={0.22}
+          emissiveIntensity={0.38}
         />
       </mesh>
 
