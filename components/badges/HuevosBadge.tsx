@@ -98,7 +98,7 @@ const TEXT_Z = RIM_FRONT - ENAMEL_RECESS - 0.008 + TEXT_DEPTH / 2;
 const RULE_THICKNESS = 0.026;
 /** Short curved rules on the flanks fill the gap between the title and the
  * caption's stars (angles from +X, radians). */
-const RULE_SPAN = 0.3;
+const RULE_SPAN = 0.55;
 const RULE_CENTERS = [rad(20), rad(160)];
 const STAR_ADVANCE = 0.11;
 
@@ -139,18 +139,18 @@ type EggSpec = {
 const EGGS: EggSpec[] = [
   // Front egg: a touch larger, leaning left.
   {
-    length: 0.66,
-    width: 0.49,
-    centre: [-0.17, 0.06],
+    length: 0.7,
+    width: 0.52,
+    centre: [-0.18, 0.06],
     heading: 100,
     goldZ: FRONT_EGG_GOLD_Z,
     shine: { at: [-0.22, 0.2], size: [0.06, 0.13], tilt: 22 },
   },
   // Back egg: tucked behind the first, leaning right.
   {
-    length: 0.6,
-    width: 0.45,
-    centre: [0.22, 0.04],
+    length: 0.64,
+    width: 0.48,
+    centre: [0.23, 0.04],
     heading: 78,
     goldZ: BACK_EGG_GOLD_Z,
     shine: { at: [-0.08, 0.27], size: [0.05, 0.11], tilt: 20 },
@@ -478,11 +478,21 @@ function twigFits({ len, halfWidth, bend }: TwigTemplate, x: number, y: number, 
 }
 
 /**
- * One course of the weave: twigs laid tangent to an elliptical arc, each
- * knocked off true by a little so the row never reads as a machined ring.
  * A stick that would overhang the oval's inner wire is swapped down the
  * template list until it fits, and dropped if even the shortest will not —
  * which is what tapers the courses off neatly at the flanks.
+ */
+function fitTwig(twig: Twig): Twig | null {
+  let template = twig.template;
+  while (template < TWIG_TEMPLATES.length && !twigFits(TWIG_TEMPLATES[template], twig.x, twig.y, twig.angle)) {
+    template += 1;
+  }
+  return template < TWIG_TEMPLATES.length ? { ...twig, template } : null;
+}
+
+/**
+ * One course of the weave: twigs laid tangent to an elliptical arc, each
+ * knocked off true by a little so the row never reads as a machined ring.
  */
 function arcRow(spec: RowSpec): Twig[] {
   const twigs: Twig[] = [];
@@ -490,19 +500,16 @@ function arcRow(spec: RowSpec): Twig[] {
     const t = spec.count === 1 ? 0.5 : i / (spec.count - 1);
     const theta = rad(spec.from + (spec.to - spec.from) * t) + wobble(i, spec.seed) * 0.06;
     const swell = 1 + wobble(i, spec.seed + 5) * 0.1;
-    const x = NEST_CX + spec.rx * Math.cos(theta) * swell;
-    const y = spec.cy + spec.ry * Math.sin(theta) * swell;
-    const angle =
-      Math.atan2(spec.ry * Math.cos(theta), -spec.rx * Math.sin(theta)) + wobble(i, spec.seed + 9) * 0.5;
-
-    let template = spec.templates[i % spec.templates.length];
-    while (!twigFits(TWIG_TEMPLATES[template], x, y, angle)) {
-      template += 1;
-      if (template >= TWIG_TEMPLATES.length) break;
-    }
-    if (template >= TWIG_TEMPLATES.length) continue;
-
-    twigs.push({ template, x, y, angle, tone: spec.tones[i % spec.tones.length], z: spec.z });
+    const fitted = fitTwig({
+      template: spec.templates[i % spec.templates.length],
+      x: NEST_CX + spec.rx * Math.cos(theta) * swell,
+      y: spec.cy + spec.ry * Math.sin(theta) * swell,
+      angle:
+        Math.atan2(spec.ry * Math.cos(theta), -spec.rx * Math.sin(theta)) + wobble(i, spec.seed + 9) * 0.5,
+      tone: spec.tones[i % spec.tones.length],
+      z: spec.z,
+    });
+    if (fitted) twigs.push(fitted);
   }
   return twigs;
 }
@@ -531,6 +538,21 @@ const NEST_TWIGS: Twig[] = [
     rx: 0.545, ry: 0.225, cy: -0.03, from: 190, to: 350, count: 10,
     templates: [1, 2, 0, 3], tones: [1, 2, 0, 2], z: NEST_FRONT_Z[1], seed: 5,
   }),
+  /* Loose ends: a few sticks left standing out of the rim on the flanks, the
+   * way a real nest never closes neatly — and what carries the weave up into
+   * the oval's wide upper corners, which the bowl alone leaves empty. */
+  ...(
+    [
+      { template: 2, x: -0.55, y: -0.03, angle: rad(62), tone: 1, z: NEST_BACK_Z[0] },
+      { template: 3, x: -0.47, y: 0.08, angle: rad(36), tone: 2, z: NEST_BACK_Z[1] },
+      { template: 4, x: -0.63, y: -0.14, angle: rad(24), tone: 0, z: NEST_FRONT_Z[0] },
+      { template: 2, x: 0.61, y: -0.05, angle: rad(118), tone: 0, z: NEST_BACK_Z[0] },
+      { template: 3, x: 0.52, y: 0.08, angle: rad(146), tone: 1, z: NEST_BACK_Z[1] },
+      { template: 4, x: 0.67, y: -0.15, angle: rad(158), tone: 2, z: NEST_FRONT_Z[0] },
+    ] as Twig[]
+  )
+    .map(fitTwig)
+    .filter((twig): twig is Twig => twig !== null),
 ];
 
 /** The dark pile the twigs are woven over, so no field colour shows between. */
@@ -897,7 +919,7 @@ function HuevosBadgeBody() {
       FIELD_SHOULDER,
       0.1,
     );
-    return tintResin(geometry, edge, 0.1, [0.62, 0.78, 0.8], [0.04, 0.04, 0.02]);
+    return tintResin(geometry, edge, 0.1, [0.72, 0.86, 0.88], [0.04, 0.04, 0.02]);
   }, []);
 
   const bowl = useMemo(() => buildCell(bowlShape(), 0.5, BOWL_TINT, 64, 0.05), []);
@@ -949,7 +971,7 @@ function HuevosBadgeBody() {
           attenuationDistance={0.45}
           thickness={0.7}
           emissive={fieldEmissive}
-          emissiveIntensity={0.15}
+          emissiveIntensity={0.42}
         />
       </mesh>
 
