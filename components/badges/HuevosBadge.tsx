@@ -135,10 +135,10 @@ const SETTLE_SPEED = 0.25;
 const WARMUP_FRAMES = 4;
 const WARMUP_SMOOTH_DELTA = 0.05;
 const REVEAL_DELAY = 0.35;
-const ROCK_STIFFNESS = 140;
-const ROCK_DAMPING = 7;
-const HOVER_KICK = 0.9;
-const MAX_ROCK = 0.09;
+const ROCK_STIFFNESS = 110;
+const ROCK_DAMPING = 5;
+const HOVER_KICK = 1.3;
+const MAX_ROCK = 0.12;
 
 /* ------------------------------------------------------------------------ */
 
@@ -601,6 +601,10 @@ function EggPair() {
     if (!g) return;
     const dt = Math.min(rawDelta, 1 / 30);
 
+    // Hidden until the drop actually begins, so the pair never hangs in the
+    // band while the pipeline warms up.
+    g.visible = d.warm >= WARMUP_FRAMES && d.delay <= 0;
+
     if (d.warm < WARMUP_FRAMES) {
       d.warm = rawDelta < WARMUP_SMOOTH_DELTA ? d.warm + 1 : 0;
     } else if (d.delay > 0) {
@@ -623,7 +627,7 @@ function EggPair() {
   });
 
   return (
-    <group ref={group} position={[0, DROP_HEIGHT, 0]}>
+    <group ref={group} position={[0, DROP_HEIGHT, 0]} visible={false}>
       {EGGS.map((spec) => (
         <Egg key={spec.heading} spec={spec} pair={group} />
       ))}
