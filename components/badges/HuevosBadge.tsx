@@ -4,12 +4,42 @@ import { useMemo, useRef } from "react";
 import { useFont } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import type { ThreeEvent } from "@react-three/fiber";
-import { Color, ExtrudeGeometry, Float32BufferAttribute, Shape, Vector2, Vector3 } from "three";
-import type { BufferGeometry, ColorRepresentation, Group } from "three";
-import { TessellateModifier } from "three/examples/jsm/modifiers/TessellateModifier.js";
-import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { CandyEnamelMaterial, MetalMaterial, usePinMaterials } from "./materials";
-import { BackPlate, DetailPiece, EnamelPiece, RimPiece } from "./parts";
+import { Color, Shape, Vector2, Vector3 } from "three";
+import type { BufferGeometry, Group } from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import {
+  CELL_ENAMEL_BEVEL,
+  CELL_ENAMEL_DEPTH,
+  CELL_GOLD_BEVEL,
+  CELL_GOLD_DEPTH,
+  CELL_OUTLINE,
+  FLOOR_BEVEL,
+  FLOOR_DEPTH,
+  FLOOR_Z,
+  TEXT_ROUGHNESS,
+  WIRE_BEVEL,
+  WIRE_DEPTH,
+  WIRE_ROUGHNESS,
+  WIRE_Z,
+  buildResinSlab,
+  cellEnamelZ,
+  polygonDistance,
+  pourResin,
+  rad,
+  tintResin,
+} from "./cloisonne";
+import type { EdgeDistance, Tint } from "./cloisonne";
+import {
+  AlloyMaterial,
+  BandLacquerMaterial,
+  CandyEnamelMaterial,
+  FloorMaterial,
+  PinMaterialProvider,
+  SatinEnamelMaterial,
+  WallMaterial,
+  usePinMaterials,
+} from "./materials";
+import { BackPlate } from "./parts";
 import {
   ENAMEL_RECESS,
   PIN_HALF_SIZE,
@@ -29,58 +59,71 @@ import {
 const A = PIN_HALF_SIZE; // 1.10 semi-axis across
 const B = 0.86; // semi-axis up
 
-/** Inward offsets from the outer edge, in the order the eye meets them. */
-const RIM_INNER = 0.03;
-const GROOVE_INNER = 0.056;
-const FILLET_INNER = 0.076;
-const RING_OUTER = 0.33;
-const RING_INNER = 0.355;
-const FILL = 0.006;
+/* Edge language is the flower medal's, converted from its measured radial
+ * fractions (× R) to inward offsets from this oval's outer edge: an offset of
+ * `(1 - fraction) × R` puts a contour on the same line of the badge. Both pins
+ * therefore carry the same channel rim — two ~0.009 wide half-round wires over
+ * a recessed dark floor — the same black lettering band and the same inner
+ * ring, at the same proportion of their silhouettes. */
+const off = (fraction: number) => (1 - fraction) * PIN_HALF_SIZE;
 
-const TEXT_OFFSET = (FILLET_INNER + RING_OUTER) / 2;
-const TITLE_SIZE = 0.2;
-const CAPTION_SIZE = 0.14;
-const TEXT_CONDENSE = 0.78;
-const TEXT_TRACKING = 0.012;
-const TEXT_DEPTH = 0.04;
-const TEXT_BEVEL = 0.008;
+/** Rim channel: outer wire on the very edge, inner wire, dark floor between. */
+const RIM_WIRE_OUTER: [number, number] = [off(1), off(0.992)];
+const RIM_WIRE_INNER: [number, number] = [off(0.9645), off(0.9565)];
+/** Floor closes the channel; a hair inside both wires so no faces are coplanar. */
+const RIM_FLOOR: [number, number] = [off(0.995), off(0.962)];
+
+/** Black lettering band. */
+const BAND: [number, number] = [off(0.96), off(0.706)];
+
+/** Inner ring: the same channel form again. */
+const RING_WIRE_OUTER: [number, number] = [off(0.708), off(0.7)];
+const RING_WIRE_INNER: [number, number] = [off(0.669), off(0.661)];
+const RING_FLOOR: [number, number] = [off(0.704), off(0.665)];
+/** Candy-glass field runs out to the inner wire. */
+const FIELD_OFFSET = off(0.665);
+
+/* Text band: same track position and same glyph treatment as FLOWER BOY. */
+const TEXT_OFFSET = off(0.826);
+const TITLE_SIZE = 0.19;
+const CAPTION_SIZE = 0.15;
+/** The reference typeface is a condensed grotesque; Helvetiker is squeezed. */
+const TEXT_CONDENSE = 0.66;
+const TEXT_TRACKING = 0.004;
+const TEXT_DEPTH = 0.036;
+/** Also fattens the strokes: the reference letters are bold. */
+const TEXT_BEVEL = 0.011;
+/** Glyph bases sink just into the black enamel so they read as struck metal. */
 const TEXT_Z = RIM_FRONT - ENAMEL_RECESS - 0.008 + TEXT_DEPTH / 2;
-const RULE_THICKNESS = 0.028;
-/** Short curved rules on the upper flanks fill the gap between the title and
- * the caption's stars (angles from +X, radians). */
-const RULE_SPAN = 0.34;
-const RULE_CENTERS = [(34 / 180) * Math.PI, (146 / 180) * Math.PI];
-const STAR_ADVANCE = 0.16;
+const RULE_THICKNESS = 0.026;
+/** Short curved rules on the flanks fill the gap between the title and the
+ * caption's stars (angles from +X, radians). */
+const RULE_SPAN = 0.3;
+const RULE_CENTERS = [rad(20), rad(160)];
+const STAR_ADVANCE = 0.11;
 
 const FONT_URL = "/fonts/typeface.json";
-
-/* Z stack — see FlowerMedal: ExtrudeGeometry caps sit at depth/2 + bevel. */
-const topOf = (z: number, depth: number, bevel: number) => z + depth / 2 + bevel;
-const enamelZFor = (goldTop: number, depth: number, bevel: number, lift = 0.002) =>
-  goldTop + lift - depth / 2 - bevel;
 
 const FIELD_Z = 0.006;
 const FIELD_DEPTH = 0.04;
 const FIELD_BEVEL = 0.012;
 const FIELD_SHOULDER = 0.014;
 
-/* Cloisonné cells share the sunflower's construction exactly: a struck gold
- * wall, an enamel slab inset by the wire width, and a gentle pillow. */
-const OUTLINE = 0.01;
-const CELL_GOLD_DEPTH = 0.05;
-const CELL_GOLD_BEVEL = 0.005;
-const CELL_ENAMEL_DEPTH = 0.03;
-const CELL_ENAMEL_BEVEL = 0.004;
-const CELL_SHOULDER = 0.009;
+/** Flat pillow with a steep meniscus at the wall, exactly as the petals pour. */
+const CELL_SHOULDER = 0.011;
 
-/** Each layer stands a little prouder than the one it overlaps. */
-const NEST_GOLD_Z = 0.04;
-const BACK_EGG_GOLD_Z = 0.052;
-const FRONT_EGG_GOLD_Z = 0.064;
-const SHINE_GOLD_Z = 0.076;
+/* Z stack of the graphic, front to back. The eggs are sandwiched: the bowl and
+ * the two back rows of twigs sit under them, the two front rows over them, so
+ * the eggs read as cradled inside the nest rather than laid on top of it. */
+const BOWL_Z = 0.018;
+const NEST_BACK_Z = [0.026, 0.034];
+const BACK_EGG_GOLD_Z = 0.044;
+const FRONT_EGG_GOLD_Z = 0.054;
+const SHINE_GOLD_Z = 0.062;
+const NEST_FRONT_Z = [0.072, 0.08];
 
 /* ------------------------------------------------------------------------ */
-/* The graphic: two golden eggs nestled in a shallow dish.                   */
+/* The graphic: two golden eggs cradled in a woven nest.                     */
 
 type EggSpec = {
   length: number;
@@ -98,7 +141,7 @@ const EGGS: EggSpec[] = [
   {
     length: 0.66,
     width: 0.49,
-    centre: [-0.17, 0.07],
+    centre: [-0.17, 0.06],
     heading: 100,
     goldZ: FRONT_EGG_GOLD_Z,
     shine: { at: [-0.22, 0.2], size: [0.06, 0.13], tilt: 22 },
@@ -107,7 +150,7 @@ const EGGS: EggSpec[] = [
   {
     length: 0.6,
     width: 0.45,
-    centre: [0.22, 0.05],
+    centre: [0.22, 0.04],
     heading: 78,
     goldZ: BACK_EGG_GOLD_Z,
     shine: { at: [-0.08, 0.27], size: [0.05, 0.11], tilt: 20 },
@@ -117,12 +160,8 @@ const EGGS: EggSpec[] = [
 /** Egg profile: widest a little below the middle, closing to a narrower top. */
 const EGG_TAPER = 0.17;
 
-/** Shallow dish beneath the eggs: a wide bowl with a slightly lipped rim. */
-const NEST = { centre: [0.02, -0.15] as [number, number], width: 1.22, depth: 0.31, rimSag: 0.05 };
-
 const EGG_COLOR = "#f2b232";
 const SHINE_COLOR = "#fce9ad";
-const NEST_COLOR = "#56220a";
 
 /* Motion. */
 const DROP_HEIGHT = 0.42;
@@ -139,19 +178,6 @@ const ROCK_STIFFNESS = 110;
 const ROCK_DAMPING = 5;
 const HOVER_KICK = 1.3;
 const MAX_ROCK = 0.12;
-
-/* ------------------------------------------------------------------------ */
-
-function clamp01(v: number) {
-  return Math.min(1, Math.max(0, v));
-}
-
-function smooth(t: number) {
-  const c = clamp01(t);
-  return c * c * (3 - 2 * c);
-}
-
-const rad = (deg: number) => (deg * Math.PI) / 180;
 
 /* ---- Ellipse helpers ---------------------------------------------------- */
 
@@ -229,110 +255,79 @@ function ovalTrack(offset: number) {
   return { total, sAt, at };
 }
 
-/* ---- Resin (mirrors FlowerMedal) ------------------------------------------ */
-
-type EdgeDistance = (x: number, y: number) => number;
-
-/** Distance from (x, y) to the nearest edge of a closed polygon. */
-function polygonDistance(points: Vector2[]): EdgeDistance {
-  return (x, y) => {
-    let best = Infinity;
-    for (let i = 0; i < points.length; i++) {
-      const a = points[i];
-      const b = points[(i + 1) % points.length];
-      const ex = b.x - a.x;
-      const ey = b.y - a.y;
-      const lengthSq = ex * ex + ey * ey || 1e-12;
-      const t = clamp01(((x - a.x) * ex + (y - a.y) * ey) / lengthSq);
-      const dx = x - (a.x + ex * t);
-      const dy = y - (a.y + ey * t);
-      best = Math.min(best, dx * dx + dy * dy);
-    }
-    return Math.sqrt(best);
-  };
+/**
+ * How far (x, y) lies inside the ring's inner edge, measured along the ellipse
+ * normal — exact enough for a parallel curve this far from the foci. Negative
+ * outside. Everything drawn on the field is fitted against this.
+ */
+function fieldDepth(x: number, y: number) {
+  const theta = Math.atan2(y / B, x / A);
+  const p = ellipseOffsetPoint(A, B, FIELD_OFFSET, theta);
+  const nx = B * Math.cos(theta);
+  const ny = A * Math.sin(theta);
+  const inv = 1 / Math.hypot(nx, ny);
+  return (p.x - x) * nx * inv + (p.y - y) * ny * inv;
 }
 
-function buildResinSlab(shape: Shape, depth: number, bevel: number, tessellation: number): BufferGeometry {
-  const geometry = new ExtrudeGeometry(shape, {
-    depth,
-    curveSegments: 48,
-    bevelEnabled: true,
-    bevelThickness: bevel,
-    bevelSize: bevel,
-    bevelOffset: 0,
-    bevelSegments: 4,
+/** Pulls any point that strays outside the field back in along the normal. */
+function clampToField(points: Vector2[], margin: number): Vector2[] {
+  return points.map((p) => {
+    const depth = fieldDepth(p.x, p.y);
+    if (depth >= margin) return p;
+    const theta = Math.atan2(p.y / B, p.x / A);
+    const nx = B * Math.cos(theta);
+    const ny = A * Math.sin(theta);
+    const inv = (margin - depth) / Math.hypot(nx, ny);
+    return new Vector2(p.x - nx * inv, p.y - ny * inv);
   });
-  geometry.translate(0, 0, -depth / 2);
-  const tessellated = new TessellateModifier(tessellation, 12).modify(geometry);
-  geometry.dispose();
-  tessellated.deleteAttribute("normal");
-  tessellated.deleteAttribute("uv");
-  return mergeVertices(tessellated, 1e-4);
 }
 
-/** Poured-enamel meniscus rising from the cell wall, with analytic cap normals. */
-function pourResin(geometry: BufferGeometry, edge: EdgeDistance, shoulder: number, meniscus: number) {
-  const position = geometry.attributes.position;
-  const height = (x: number, y: number) => shoulder * smooth(edge(x, y) / meniscus);
-
-  let zFront = -Infinity;
-  for (let i = 0; i < position.count; i++) zFront = Math.max(zFront, position.getZ(i));
-  const onCap: boolean[] = new Array(position.count);
-  for (let i = 0; i < position.count; i++) onCap[i] = position.getZ(i) > zFront - 1e-3;
-
-  for (let i = 0; i < position.count; i++) {
-    position.setZ(i, position.getZ(i) + height(position.getX(i), position.getY(i)));
+/** Points along an ellipse arc, `from`/`to` in degrees. */
+function ellipseArcPoints(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  from: number,
+  to: number,
+  steps: number,
+): Vector2[] {
+  const points: Vector2[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const theta = rad(from + ((to - from) * i) / steps);
+    points.push(new Vector2(cx + rx * Math.cos(theta), cy + ry * Math.sin(theta)));
   }
-  geometry.computeVertexNormals();
-
-  const normal = geometry.attributes.normal;
-  const eps = 0.005;
-  for (let i = 0; i < position.count; i++) {
-    if (!onCap[i]) continue;
-    const x = position.getX(i);
-    const y = position.getY(i);
-    const dx = (height(x + eps, y) - height(x - eps, y)) / (2 * eps);
-    const dy = (height(x, y + eps) - height(x, y - eps)) / (2 * eps);
-    const inverseLength = 1 / Math.hypot(dx, dy, 1);
-    normal.setXYZ(i, -dx * inverseLength, -dy * inverseLength, inverseLength);
-  }
-  normal.needsUpdate = true;
-  geometry.computeBoundingSphere();
-  return geometry;
+  return points;
 }
 
-/** Tonal vertex tints: deeper toward the wall, a touch lifted in the middle. */
-function tintResin(
-  geometry: BufferGeometry,
-  edge: EdgeDistance,
-  edgeWidth: number,
-  edgeTint: [number, number, number],
-  hotTint: [number, number, number],
-) {
-  const position = geometry.attributes.position;
-  const colors = new Float32Array(position.count * 3);
-  for (let i = 0; i < position.count; i++) {
-    const wall = 1 - smooth(edge(position.getX(i), position.getY(i)) / edgeWidth);
-    const hot = 1 - wall;
-    colors[i * 3] = 1 + (edgeTint[0] - 1) * wall + hotTint[0] * hot;
-    colors[i * 3 + 1] = 1 + (edgeTint[1] - 1) * wall + hotTint[1] * hot;
-    colors[i * 3 + 2] = 1 + (edgeTint[2] - 1) * wall + hotTint[2] * hot;
-  }
-  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
-  return geometry;
-}
-
-type Tint = { edge: [number, number, number]; hot: [number, number, number] };
+/* ---- Cells -------------------------------------------------------------- */
 
 /**
  * One cloisonné cell, built the way the sunflower petals are: the outline is
  * struck gold, the enamel is a slab inset by the wire width with a soft
  * pillow rising from the wall. Returns both geometries in the shape's frame.
  */
-function buildCell(outline: Shape, width: number, tint: Tint, divisions = 48) {
+function buildCell(outline: Shape, width: number, tint: Tint, divisions = 48, tessellation = 0.02) {
   const points = outline.getPoints(divisions);
-  const cell = offsetPolygon(points, OUTLINE, 3);
-  const edge = polygonDistance(cell);
+  const cell = offsetPolygon(points, CELL_OUTLINE, 3);
+  return buildCellFrom(outline, cell, width, tint, divisions, tessellation);
+}
+
+/**
+ * A cell whose enamel island is supplied directly rather than derived by
+ * offsetting the outline — a twig's inner stroke is simply a shorter, thinner
+ * stroke on the same centreline, which stays clean where a polygon offset
+ * would fold over itself at the tapered tips.
+ */
+function buildCellFrom(
+  outline: Shape,
+  island: Vector2[],
+  width: number,
+  tint: Tint,
+  divisions: number,
+  tessellation: number,
+) {
+  const edge = polygonDistance(island);
   const gold = extrudeCentered(outline, {
     depth: CELL_GOLD_DEPTH,
     bevel: CELL_GOLD_BEVEL,
@@ -341,23 +336,20 @@ function buildCell(outline: Shape, width: number, tint: Tint, divisions = 48) {
   });
   const enamel = tintResin(
     pourResin(
-      buildResinSlab(polygonShape(cell), CELL_ENAMEL_DEPTH, CELL_ENAMEL_BEVEL, 0.02),
+      buildResinSlab(polygonShape(island), CELL_ENAMEL_DEPTH, CELL_ENAMEL_BEVEL, tessellation),
       edge,
       CELL_SHOULDER,
       width * 0.45,
     ),
     edge,
-    width * 0.18,
+    width * 0.2,
     tint.edge,
     tint.hot,
   );
   return { gold, enamel };
 }
 
-const cellEnamelZ = (goldZ: number) =>
-  enamelZFor(topOf(goldZ, CELL_GOLD_DEPTH, CELL_GOLD_BEVEL), CELL_ENAMEL_DEPTH, CELL_ENAMEL_BEVEL);
-
-/* ---- Shapes ------------------------------------------------------------------ */
+/* ---- Shapes ------------------------------------------------------------- */
 
 /** Egg outline pointing up the +Y axis, centred on the origin. */
 function eggShape(length: number, width: number, steps = 40): Shape {
@@ -388,24 +380,216 @@ function shineShape(rx: number, ry: number, tilt: number, cx: number, cy: number
   return polygonShape(points);
 }
 
-/** Wide shallow dish: a sagging rim over a half-ellipse bowl. */
-function nestShape(): Shape {
-  const [cx, cy] = NEST.centre;
-  const hw = NEST.width / 2;
-  const shape = new Shape();
-  shape.moveTo(cx - hw, cy);
-  shape.quadraticCurveTo(cx, cy - NEST.rimSag * 2, cx + hw, cy);
-  shape.absellipse(cx, cy, hw, NEST.depth, 0, -Math.PI, true, 0);
-  shape.closePath();
-  return shape;
+/* ---- The nest ----------------------------------------------------------- */
+
+/**
+ * A twig: a tapered, gently bowed stroke, pointed at both ends and a little
+ * thicker at its butt. Laid down in overlapping rows these are what make the
+ * nest read as woven sticks instead of a chocolate dish.
+ */
+type TwigTemplate = { len: number; halfWidth: number; bend: number };
+
+const TWIG_TEMPLATES: TwigTemplate[] = [
+  { len: 0.48, halfWidth: 0.025, bend: -0.05 },
+  { len: 0.4, halfWidth: 0.024, bend: -0.075 },
+  { len: 0.34, halfWidth: 0.023, bend: -0.045 },
+  { len: 0.28, halfWidth: 0.022, bend: -0.095 },
+  { len: 0.22, halfWidth: 0.021, bend: -0.035 },
+];
+
+/** Centreline of a twig: a flat parabola so it follows the curve of the bowl. */
+function twigCentre(len: number, bend: number, t: number) {
+  const u = t - 0.5;
+  return new Vector2(u * len, bend * len * (1 - 4 * u * u));
 }
 
-/* ---- Band lettering --------------------------------------------------------- */
+/** Outline of one twig, pointing along +X and centred on the origin. */
+function twigOutline(len: number, halfWidth: number, bend: number, steps = 26): Vector2[] {
+  const width = (t: number) => halfWidth * Math.pow(Math.sin(Math.PI * t), 0.42) * (1 - 0.3 * (t - 0.5));
+  const normal = (t: number) => {
+    const a = twigCentre(len, bend, Math.max(0, t - 1e-3));
+    const b = twigCentre(len, bend, Math.min(1, t + 1e-3));
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const inv = 1 / Math.hypot(dx, dy);
+    return new Vector2(-dy * inv, dx * inv);
+  };
+
+  const right: Vector2[] = [];
+  const left: Vector2[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const centre = twigCentre(len, bend, t);
+    if (i === 0 || i === steps) {
+      right.push(centre);
+      continue;
+    }
+    const n = normal(t).multiplyScalar(width(t));
+    right.push(centre.clone().add(n));
+    left.push(centre.clone().sub(n));
+  }
+  return [...right, ...left.reverse()];
+}
+
+/** Nest browns: dark umber under the pile, warm brown, straw-lit tops. */
+const NEST_TONES = ["#3d1c0a", "#7a4820", "#bd944f"];
+const NEST_TINT: Tint = { edge: [0.66, 0.58, 0.52], hot: [0.05, 0.035, 0.01] };
+const BOWL_COLOR = "#2a1206";
+const BOWL_TINT: Tint = { edge: [0.75, 0.7, 0.68], hot: [0.03, 0.02, 0.01] };
+
+type Twig = { template: number; x: number; y: number; angle: number; tone: number; z: number };
+
+const NEST_CX = 0.02;
+
+/** Deterministic hash in −0.5…0.5 — the weave must not resample every mount. */
+function wobble(i: number, seed: number) {
+  const v = Math.sin((i + 1) * 12.9898 + seed * 78.233) * 43758.5453;
+  return v - Math.floor(v) - 0.5;
+}
+
+type RowSpec = {
+  rx: number;
+  ry: number;
+  cy: number;
+  /** Sweep, in degrees, along the lower half of the row's ellipse. */
+  from: number;
+  to: number;
+  count: number;
+  templates: number[];
+  tones: number[];
+  z: number;
+  seed: number;
+};
+
+/** Clearance a twig keeps from the inner wire so no stick crosses the ring. */
+const FIELD_MARGIN = 0.016;
+
+/** Does this twig lie wholly inside the field at this placement? */
+function twigFits({ len, halfWidth, bend }: TwigTemplate, x: number, y: number, angle: number) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  for (let i = 0; i <= 8; i++) {
+    const c = twigCentre(len, bend, i / 8);
+    if (fieldDepth(x + c.x * cos - c.y * sin, y + c.x * sin + c.y * cos) < halfWidth + FIELD_MARGIN) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * One course of the weave: twigs laid tangent to an elliptical arc, each
+ * knocked off true by a little so the row never reads as a machined ring.
+ * A stick that would overhang the oval's inner wire is swapped down the
+ * template list until it fits, and dropped if even the shortest will not —
+ * which is what tapers the courses off neatly at the flanks.
+ */
+function arcRow(spec: RowSpec): Twig[] {
+  const twigs: Twig[] = [];
+  for (let i = 0; i < spec.count; i++) {
+    const t = spec.count === 1 ? 0.5 : i / (spec.count - 1);
+    const theta = rad(spec.from + (spec.to - spec.from) * t) + wobble(i, spec.seed) * 0.06;
+    const swell = 1 + wobble(i, spec.seed + 5) * 0.1;
+    const x = NEST_CX + spec.rx * Math.cos(theta) * swell;
+    const y = spec.cy + spec.ry * Math.sin(theta) * swell;
+    const angle =
+      Math.atan2(spec.ry * Math.cos(theta), -spec.rx * Math.sin(theta)) + wobble(i, spec.seed + 9) * 0.5;
+
+    let template = spec.templates[i % spec.templates.length];
+    while (!twigFits(TWIG_TEMPLATES[template], x, y, angle)) {
+      template += 1;
+      if (template >= TWIG_TEMPLATES.length) break;
+    }
+    if (template >= TWIG_TEMPLATES.length) continue;
+
+    twigs.push({ template, x, y, angle, tone: spec.tones[i % spec.tones.length], z: spec.z });
+  }
+  return twigs;
+}
+
+/* Four courses. The two back ones build the far wall and floor of the bowl and
+ * sit under the eggs; the two front ones are the near wall and are laid over
+ * them, so the front row cuts across the eggs' blunt ends. */
+const NEST_TWIGS: Twig[] = [
+  ...arcRow({
+    rx: 0.63, ry: 0.315, cy: -0.115, from: 176, to: 364, count: 11,
+    templates: [0, 2, 1, 3], tones: [0, 1, 0, 2], z: NEST_BACK_Z[0], seed: 1,
+  }),
+  ...arcRow({
+    rx: 0.565, ry: 0.26, cy: -0.115, from: 182, to: 358, count: 10,
+    templates: [1, 3, 0, 2], tones: [1, 0, 2, 1], z: NEST_BACK_Z[1], seed: 2,
+  }),
+  ...arcRow({
+    rx: 0.5, ry: 0.2, cy: -0.115, from: 190, to: 350, count: 9,
+    templates: [2, 4, 1, 3], tones: [0, 2, 1, 0], z: NEST_BACK_Z[1], seed: 3,
+  }),
+  ...arcRow({
+    rx: 0.575, ry: 0.15, cy: -0.03, from: 182, to: 358, count: 10,
+    templates: [0, 2, 1, 3], tones: [2, 1, 0, 1], z: NEST_FRONT_Z[0], seed: 4,
+  }),
+  ...arcRow({
+    rx: 0.545, ry: 0.225, cy: -0.03, from: 190, to: 350, count: 10,
+    templates: [1, 2, 0, 3], tones: [1, 2, 0, 2], z: NEST_FRONT_Z[1], seed: 5,
+  }),
+];
+
+/** The dark pile the twigs are woven over, so no field colour shows between. */
+function bowlShape(): Shape {
+  return polygonShape(
+    clampToField(
+      [
+        ...ellipseArcPoints(NEST_CX, -0.055, 0.545, 0.14, 184, 356, 48),
+        ...ellipseArcPoints(NEST_CX, -0.105, 0.615, 0.32, 356, 184, 48),
+      ],
+      CELL_OUTLINE + FIELD_MARGIN,
+    ),
+  );
+}
+
+/** Twig templates built once, then cloned into place for every placement. */
+function useNest() {
+  return useMemo(() => {
+    const templates = TWIG_TEMPLATES.map(({ len, halfWidth, bend }) => {
+      const innerLen = len - 5.2 * CELL_OUTLINE;
+      return buildCellFrom(
+        polygonShape(twigOutline(len, halfWidth, bend)),
+        twigOutline(innerLen, halfWidth - CELL_OUTLINE, (bend * innerLen) / len),
+        (halfWidth - CELL_OUTLINE) * 2,
+        NEST_TINT,
+        8,
+        0.03,
+      );
+    });
+
+    const goldParts: BufferGeometry[] = [];
+    const enamelParts: BufferGeometry[][] = NEST_TONES.map(() => []);
+    for (const twig of NEST_TWIGS) {
+      const template = templates[twig.template];
+      goldParts.push(template.gold.clone().rotateZ(twig.angle).translate(twig.x, twig.y, twig.z));
+      enamelParts[twig.tone].push(
+        template.enamel.clone().rotateZ(twig.angle).translate(twig.x, twig.y, cellEnamelZ(twig.z)),
+      );
+    }
+    templates.forEach(({ gold, enamel }) => {
+      gold.dispose();
+      enamel.dispose();
+    });
+
+    const gold = mergeGeometries(goldParts);
+    const enamel = enamelParts.map((parts) => mergeGeometries(parts));
+    goldParts.forEach((part) => part.dispose());
+    enamelParts.flat().forEach((part) => part.dispose());
+    return { gold, enamel };
+  }, []);
+}
+
+/* ---- Band lettering ----------------------------------------------------- */
 
 /**
  * "HUEVOS" across the top reading clockwise with glyph tops outward;
  * "★ HELD THROUGH IT ALL ★" along the bottom reading left to right with tops
- * inward, the way a medal caption sits; two short rules on the upper flanks.
+ * inward, the way a medal caption sits; two short rules on the flanks. The
+ * glyph treatment — condense, bevel, cap-height centring — is FLOWER BOY's.
  */
 function useBandText() {
   const font = useFont(FONT_URL);
@@ -414,8 +598,19 @@ function useBandText() {
     const track = ovalTrack(TEXT_OFFSET);
     const pieces: BufferGeometry[] = [];
 
+    // Centre every glyph on the cap height of a reference capital so the
+    // baseline sits at a constant offset (glyph bboxes differ per letter).
+    const capCentreFor = (size: number) => {
+      const probe = extrudeCentered(font.generateShapes("E", size), { depth: 0.01, bevel: 0 });
+      probe.computeBoundingBox();
+      const centre = (probe.boundingBox!.min.y + probe.boundingBox!.max.y) / 2;
+      probe.dispose();
+      return centre;
+    };
+
     const lay = (text: string, size: number, centreTheta: number, direction: 1 | -1) => {
       const scale = (size / resolution) * TEXT_CONDENSE;
+      const capCentre = capCentreFor(size);
       const chars = [...text];
       const advances = chars.map((char) =>
         char === "★" ? STAR_ADVANCE : (glyphs[char]?.ha ?? glyphs["a"]?.ha ?? 500) * scale,
@@ -432,7 +627,7 @@ function useBandText() {
           const angle = Math.atan2(tangent.y * direction, tangent.x * direction);
           let glyph: BufferGeometry;
           if (char === "★") {
-            glyph = extrudeCentered(starShape(5, size * 0.36, size * 0.16), {
+            glyph = extrudeCentered(starShape(5, size * 0.27, size * 0.12), {
               depth: TEXT_DEPTH,
               bevel: TEXT_BEVEL,
               curveSegments: 4,
@@ -448,7 +643,7 @@ function useBandText() {
             });
             glyph.computeBoundingBox();
             const box = glyph.boundingBox!;
-            glyph.translate(-(box.min.x + box.max.x) / 2, -size * 0.36, 0);
+            glyph.translate(-(box.min.x + box.max.x) / 2, -capCentre, 0);
             glyph.scale(TEXT_CONDENSE, 1, 1);
           }
           glyph.rotateZ(angle);
@@ -480,30 +675,10 @@ function useBandText() {
   }, [font]);
 }
 
-/* ---- Materials ---------------------------------------------------------------- */
-
-/** Satin hard enamel, same recipe as the sunflower petals. */
-function CellMaterial({ color, envScale = 0.75 }: { color: ColorRepresentation; envScale?: number }) {
-  const { envMapIntensity } = usePinMaterials();
-  return (
-    <meshPhysicalMaterial
-      color={color}
-      vertexColors
-      metalness={0}
-      roughness={0.42}
-      clearcoat={0.8}
-      clearcoatRoughness={0.28}
-      reflectivity={0.35}
-      envMapIntensity={envMapIntensity * envScale}
-    />
-  );
-}
-
-/* ---- Eggs with motion -------------------------------------------------------- */
+/* ---- Eggs with motion --------------------------------------------------- */
 
 const EGG_TINT: Tint = { edge: [0.94, 0.8, 0.52], hot: [0.02, 0.02, 0] };
 const SHINE_TINT: Tint = { edge: [0.98, 0.95, 0.85], hot: [0, 0, 0] };
-const NEST_TINT: Tint = { edge: [0.7, 0.6, 0.55], hot: [0.1, 0.07, 0.02] };
 
 type Rock = { angle: number; velocity: number };
 
@@ -563,7 +738,7 @@ function Egg({ spec, pair }: { spec: EggSpec; pair: React.RefObject<Group | null
         rotation={[0, 0, heading - Math.PI / 2]}
       >
         <mesh geometry={cells.egg.gold} position={[0, 0, spec.goldZ]} receiveShadow>
-          <MetalMaterial metal="gold" />
+          <WallMaterial />
         </mesh>
         <mesh
           geometry={cells.egg.enamel}
@@ -572,13 +747,13 @@ function Egg({ spec, pair }: { spec: EggSpec; pair: React.RefObject<Group | null
           onPointerOver={kick}
           onPointerDown={kick}
         >
-          <CellMaterial color={EGG_COLOR} />
+          <SatinEnamelMaterial color={EGG_COLOR} />
         </mesh>
         <mesh geometry={cells.shine.gold} position={[0, 0, SHINE_GOLD_Z]} receiveShadow>
-          <MetalMaterial metal="gold" />
+          <WallMaterial />
         </mesh>
         <mesh geometry={cells.shine.enamel} position={[0, 0, cellEnamelZ(SHINE_GOLD_Z)]} receiveShadow>
-          <CellMaterial color={SHINE_COLOR} envScale={0.9} />
+          <SatinEnamelMaterial color={SHINE_COLOR} envScale={0.4} emissiveIntensity={0.2} />
         </mesh>
       </group>
     </group>
@@ -635,40 +810,89 @@ function EggPair() {
   );
 }
 
+/* ---- Channel pieces ----------------------------------------------------- */
+
+/** Half-round gold wire following a parallel curve of the oval. */
+function useWire([outer, inner]: [number, number]) {
+  return useMemo(
+    () =>
+      extrudeCentered(ovalShape(outer, inner), {
+        depth: WIRE_DEPTH,
+        bevel: Math.min(WIRE_BEVEL, (inner - outer) / 2 - 0.001),
+        curveSegments: 12,
+        bevelSegments: 5,
+      }),
+    [inner, outer],
+  );
+}
+
+/** Flat gold floor of a channel, set below the wires. */
+function useFloor([outer, inner]: [number, number]) {
+  return useMemo(
+    () =>
+      extrudeCentered(ovalShape(outer, inner), {
+        depth: FLOOR_DEPTH,
+        bevel: FLOOR_BEVEL,
+        curveSegments: 12,
+        bevelSegments: 2,
+      }),
+    [inner, outer],
+  );
+}
+
 /* ------------------------------------------------------------------------ */
 
 /**
- * HUEVOS — "Held through it all." A wide oval hard-enamel pin in the
- * FLOWER BOY family: gold double-line rim, black band with raised gold
- * lettering, a thin inner ring, then a deep candy-glass field carrying a
- * flat cloisonné graphic of two golden eggs nestled in a dish — every cell
- * outlined in struck gold, the way the sunflower is drawn.
+ * HUEVOS — "Held through it all." The wide oval of the FLOWER BOY family:
+ * the same channel-form gold rim and inner ring (two fine wires over a dark
+ * satin floor), the same black band carrying raised lettering, then a deep
+ * candy-glass field holding a cloisonné nest — five courses of enamelled
+ * twigs woven over a dark pile — with two golden eggs dropped in and cradled
+ * behind its front rows.
+ *
+ * As on the flower medal the reference gold is satin rather than mirror, so
+ * the shared settings are re-provided with a rougher metal for this badge.
  */
 export function HuevosBadge() {
+  const settings = usePinMaterials();
+  const satin = useMemo(
+    () => ({ ...settings, metalRoughness: Math.max(settings.metalRoughness, 0.2) }),
+    [settings],
+  );
+  return (
+    <PinMaterialProvider value={satin}>
+      <HuevosBadgeBody />
+    </PinMaterialProvider>
+  );
+}
+
+function HuevosBadgeBody() {
   const { enamelColor } = usePinMaterials();
   const attenuation = useMemo(() => new Color(enamelColor).offsetHSL(-0.01, 0.05, -0.1), [enamelColor]);
   const fieldEmissive = useMemo(() => new Color(enamelColor).offsetHSL(0, 0, -0.12), [enamelColor]);
 
-  const back = useMemo(() => ovalShape(0.025), []);
-  const rim = useMemo(() => ovalShape(0, RIM_INNER), []);
-  const groove = useMemo(() => ovalShape(RIM_INNER - FILL, GROOVE_INNER + FILL), []);
-  const fillet = useMemo(() => ovalShape(GROOVE_INNER, FILLET_INNER), []);
-  const band = useMemo(() => ovalShape(FILLET_INNER - FILL, RING_OUTER + FILL), []);
-  const ring = useMemo(() => ovalShape(RING_OUTER, RING_INNER), []);
+  const back = useMemo(() => ovalShape(0.02), []);
+  const rimOuter = useWire(RIM_WIRE_OUTER);
+  const rimInner = useWire(RIM_WIRE_INNER);
+  const rimFloor = useFloor(RIM_FLOOR);
+  const ringOuter = useWire(RING_WIRE_OUTER);
+  const ringInner = useWire(RING_WIRE_INNER);
+  const ringFloor = useFloor(RING_FLOOR);
+  const bandGeometry = useMemo(
+    () =>
+      extrudeCentered(ovalShape(BAND[0], BAND[1]), {
+        depth: 0.04,
+        bevel: 0.004,
+        curveSegments: 12,
+        bevelSegments: 2,
+      }),
+    [],
+  );
 
   const fieldGeometry = useMemo(() => {
-    // Signed distance to the ring's inner edge along the ellipse normal —
-    // exact enough for a parallel curve this far from the foci.
-    const edge: EdgeDistance = (x, y) => {
-      const theta = Math.atan2(y / B, x / A);
-      const p = ellipseOffsetPoint(A, B, RING_INNER, theta);
-      const nx = B * Math.cos(theta);
-      const ny = A * Math.sin(theta);
-      const inv = 1 / Math.hypot(nx, ny);
-      return (p.x - x) * nx * inv + (p.y - y) * ny * inv;
-    };
+    const edge: EdgeDistance = fieldDepth;
     const geometry = pourResin(
-      buildResinSlab(ovalShape(RING_INNER - 0.005), FIELD_DEPTH, FIELD_BEVEL, 0.05),
+      buildResinSlab(ovalShape(FIELD_OFFSET - 0.005), FIELD_DEPTH, FIELD_BEVEL, 0.05),
       edge,
       FIELD_SHOULDER,
       0.1,
@@ -676,23 +900,45 @@ export function HuevosBadge() {
     return tintResin(geometry, edge, 0.1, [0.62, 0.78, 0.8], [0.04, 0.04, 0.02]);
   }, []);
 
-  const nest = useMemo(() => buildCell(nestShape(), NEST.depth * 2, NEST_TINT, 64), []);
+  const bowl = useMemo(() => buildCell(bowlShape(), 0.5, BOWL_TINT, 64, 0.05), []);
+  const nest = useNest();
   const bandText = useBandText();
+
+  const bandZ = RIM_FRONT - ENAMEL_RECESS - 0.02 - 0.004;
 
   return (
     <group name="huevos-badge">
-      {/* Gold shell: double-line rim with a black groove between the lines. */}
       <BackPlate shape={back} metal="gold" curveSegments={12} />
-      <RimPiece shape={rim} metal="gold" curveSegments={12} />
-      <EnamelPiece shape={groove} color="#070605" curveSegments={12} />
-      <DetailPiece shape={fillet} metal="gold" curveSegments={12} />
 
-      {/* Glossy black band with struck lettering. */}
-      <EnamelPiece shape={band} color="#080706" curveSegments={12} />
-      <mesh geometry={bandText} position={[0, 0, TEXT_Z]} receiveShadow>
-        <MetalMaterial metal="gold" />
+      {/* Rim channel: two fine wires over a dark satin floor. */}
+      <mesh geometry={rimOuter} position={[0, 0, WIRE_Z]} receiveShadow>
+        <AlloyMaterial roughness={WIRE_ROUGHNESS} />
       </mesh>
-      <DetailPiece shape={ring} metal="gold" curveSegments={12} />
+      <mesh geometry={rimFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
+        <FloorMaterial />
+      </mesh>
+      <mesh geometry={rimInner} position={[0, 0, WIRE_Z]} receiveShadow>
+        <AlloyMaterial roughness={WIRE_ROUGHNESS} />
+      </mesh>
+
+      {/* Black band with the struck lettering. */}
+      <mesh geometry={bandGeometry} position={[0, 0, bandZ]} receiveShadow>
+        <BandLacquerMaterial />
+      </mesh>
+      <mesh geometry={bandText} position={[0, 0, TEXT_Z]} receiveShadow>
+        <AlloyMaterial roughness={TEXT_ROUGHNESS} />
+      </mesh>
+
+      {/* Inner ring channel. */}
+      <mesh geometry={ringOuter} position={[0, 0, WIRE_Z]} receiveShadow>
+        <AlloyMaterial roughness={WIRE_ROUGHNESS} />
+      </mesh>
+      <mesh geometry={ringFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
+        <FloorMaterial />
+      </mesh>
+      <mesh geometry={ringInner} position={[0, 0, WIRE_Z]} receiveShadow>
+        <AlloyMaterial roughness={WIRE_ROUGHNESS} />
+      </mesh>
 
       {/* Candy-glass field, meniscus rising against the ring. */}
       <mesh geometry={fieldGeometry} position={[0, 0, FIELD_Z]} receiveShadow>
@@ -707,15 +953,25 @@ export function HuevosBadge() {
         />
       </mesh>
 
-      {/* The nest: a dark chocolate dish in a fine gold wire, like the seed head. */}
-      <mesh geometry={nest.gold} position={[0, 0, NEST_GOLD_Z]} receiveShadow>
-        <MetalMaterial metal="gold" />
+      {/* The pile the nest is woven over — a dark cell the twigs sit on. */}
+      <mesh geometry={bowl.gold} position={[0, 0, BOWL_Z]} receiveShadow>
+        <WallMaterial />
       </mesh>
-      <mesh geometry={nest.enamel} position={[0, 0, cellEnamelZ(NEST_GOLD_Z)]} receiveShadow>
-        <CellMaterial color={NEST_COLOR} envScale={0.5} />
+      <mesh geometry={bowl.enamel} position={[0, 0, cellEnamelZ(BOWL_Z)]} receiveShadow>
+        <SatinEnamelMaterial color={BOWL_COLOR} envScale={0.35} emissiveIntensity={0.12} />
       </mesh>
 
-      {/* The golden eggs. */}
+      {/* Every twig's wall in one draw call; the enamel grouped by tone. */}
+      <mesh geometry={nest.gold} receiveShadow>
+        <WallMaterial />
+      </mesh>
+      {nest.enamel.map((geometry, i) => (
+        <mesh key={NEST_TONES[i]} geometry={geometry} receiveShadow>
+          <SatinEnamelMaterial color={NEST_TONES[i]} envScale={0.32} emissiveIntensity={0.16} />
+        </mesh>
+      ))}
+
+      {/* The golden eggs, dropped in behind the front courses. */}
       <EggPair />
     </group>
   );

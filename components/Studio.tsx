@@ -48,36 +48,44 @@ const DEFAULT_RIG: Rig = {
   kickerIntensity: 4,
 };
 
+/* The flower medal reference is lit warm all round by a key from the upper
+ * left: every stroke and petal carries one glint on its upper-left edge and
+ * falls dark to the lower right, flat gold reads mid-tan, and the glow is
+ * amber. So the blue sources go warm, the key spot moves to the upper left,
+ * the right-hand strip is dimmed, and the frontal cards are eased back. */
+const CLOISONNE_RIG: Partial<Rig> = {
+  keyColor: "#fff3e4",
+  keyPosition: [-4.5, 5.5, 6],
+  keyScale: 0.8,
+  fillColor: "#ffd9b0",
+  fillScale: 0.25,
+  rightStripColor: "#ffe9d2",
+  rightStripIntensity: 1.5,
+  fillPanelColor: "#fff0dd",
+  frontalCardColor: "#fff6ec",
+  frontalCardIntensity: 0.26,
+  softboxColor: "#fff8f0",
+  softboxIntensity: 2.2,
+  kickerIntensity: 5,
+};
+
 const RIGS: Partial<Record<BadgeVariant, Partial<Rig>>> = {
-  /* The flower medal reference is lit warm all round by a key from the upper
-   * left: every stroke and petal carries one glint on its upper-left edge and
-   * falls dark to the lower right, flat gold reads mid-tan, and the glow is
-   * amber. So the blue sources go warm, the key spot moves to the upper left,
-   * the right-hand strip is dimmed, and the frontal cards are eased back. */
-  flowerMedal: {
-    keyColor: "#fff3e4",
-    keyPosition: [-4.5, 5.5, 6],
-    keyScale: 0.8,
-    fillColor: "#ffd9b0",
-    fillScale: 0.25,
-    rightStripColor: "#ffe9d2",
-    rightStripIntensity: 1.5,
-    fillPanelColor: "#fff0dd",
-    frontalCardColor: "#fff6ec",
-    frontalCardIntensity: 0.26,
-    softboxColor: "#fff8f0",
-    softboxIntensity: 2.2,
-    kickerIntensity: 5,
-  },
+  flowerMedal: CLOISONNE_RIG,
+  /* HUEVOS is built from the same cloisonné parts and has to sit next to the
+   * flower medal as a sibling, so it is lit by the identical rig. */
+  huevosBadge: CLOISONNE_RIG,
 };
 
 /** Per-badge post-processing overrides (the Leva values apply otherwise). */
 export type PostOverrides = { bloomIntensity?: number; bloomThreshold?: number };
 
+/* The reference glows: every gold glint and the hot field carry a soft amber
+ * halo, so bloom starts lower and pushes harder for the cloisonné pins. */
+const CLOISONNE_BLOOM: PostOverrides = { bloomIntensity: 0.85, bloomThreshold: 0.88 };
+
 export const POST_OVERRIDES: Partial<Record<BadgeVariant, PostOverrides>> = {
-  /* The reference glows: every gold glint and the hot field carry a soft
-   * amber halo, so bloom starts lower and pushes harder for this badge. */
-  flowerMedal: { bloomIntensity: 0.85, bloomThreshold: 0.88 },
+  flowerMedal: CLOISONNE_BLOOM,
+  huevosBadge: CLOISONNE_BLOOM,
 };
 
 /**
