@@ -57,18 +57,27 @@ const RIGS: Partial<Record<BadgeVariant, Partial<Rig>>> = {
   flowerMedal: {
     keyColor: "#fff3e4",
     keyPosition: [-4.5, 5.5, 6],
-    keyScale: 1.5,
+    keyScale: 0.8,
     fillColor: "#ffd9b0",
     fillScale: 0.25,
     rightStripColor: "#ffe9d2",
     rightStripIntensity: 1.5,
     fillPanelColor: "#fff0dd",
     frontalCardColor: "#fff6ec",
-    frontalCardIntensity: 0.22,
+    frontalCardIntensity: 0.26,
     softboxColor: "#fff8f0",
-    softboxIntensity: 2,
+    softboxIntensity: 2.2,
     kickerIntensity: 5,
   },
+};
+
+/** Per-badge post-processing overrides (the Leva values apply otherwise). */
+export type PostOverrides = { bloomIntensity?: number; bloomThreshold?: number };
+
+export const POST_OVERRIDES: Partial<Record<BadgeVariant, PostOverrides>> = {
+  /* The reference glows: every gold glint and the hot field carry a soft
+   * amber halo, so bloom starts lower and pushes harder for this badge. */
+  flowerMedal: { bloomIntensity: 0.7, bloomThreshold: 0.9 },
 };
 
 /**

@@ -8,7 +8,6 @@ import { TessellateModifier } from "three/examples/jsm/modifiers/TessellateModif
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   CandyEnamelMaterial,
-  EnamelMaterial,
   PinMaterialProvider,
   usePinMaterials,
   useShiftedColor,
@@ -34,31 +33,31 @@ const at = (fraction: number) => fraction * R;
 
 /* Rim: a channel — outer wire glints at 0.995R, inner wire at 0.958R, and the
  * gold floor between (0.965–0.985R) reads as dark satin gold. */
-const RIM_WIRE_OUTER: [number, number] = [at(0.991), R];
-const RIM_WIRE_INNER: [number, number] = [at(0.958), at(0.967)];
+const RIM_WIRE_OUTER: [number, number] = [at(0.992), R];
+const RIM_WIRE_INNER: [number, number] = [at(0.9565), at(0.9645)];
 /** Floor closes the channel; a hair inside both wires so no faces are coplanar. */
 const RIM_FLOOR: [number, number] = [at(0.962), at(0.995)];
 
 /* Inner ring: the same channel form, glints at 0.665R and 0.70R. */
-const RING_WIRE_OUTER: [number, number] = [at(0.701), at(0.711)];
-const RING_WIRE_INNER: [number, number] = [at(0.663), at(0.673)];
-const RING_FLOOR: [number, number] = [at(0.667), at(0.706)];
+const RING_WIRE_OUTER: [number, number] = [at(0.697), at(0.706)];
+const RING_WIRE_INNER: [number, number] = [at(0.661), at(0.669)];
+const RING_FLOOR: [number, number] = [at(0.665), at(0.702)];
 /** Red field runs out to the inner wire. */
 const FIELD_RADIUS = at(0.665);
 
 /** Black band between the ring and the rim. */
-const BAND: [number, number] = [at(0.709), at(0.962)];
+const BAND: [number, number] = [at(0.704), at(0.96)];
 
 const WIRE_DEPTH = 0.05;
 /** Wires are half-round: bevel ≈ half the width so the crest is a rounded ridge. */
-const WIRE_BEVEL = 0.005;
+const WIRE_BEVEL = 0.004;
 const WIRE_Z = RIM_FRONT - WIRE_DEPTH / 2 - WIRE_BEVEL;
 const FLOOR_DEPTH = 0.03;
-const FLOOR_Z = RIM_FRONT - 0.034 - FLOOR_DEPTH / 2;
+const FLOOR_Z = RIM_FRONT - 0.04 - FLOOR_DEPTH / 2;
 
 /* Text band: cap height 0.16R centred on 0.83R. */
-const TEXT_RADIUS = at(0.83);
-const TEXT_SIZE = 0.205;
+const TEXT_RADIUS = at(0.826);
+const TEXT_SIZE = 0.19;
 /** The reference typeface is a condensed grotesque; Helvetiker is squeezed. */
 const TEXT_CONDENSE = 0.66;
 const TEXT_TRACKING = 0.004;
@@ -119,7 +118,7 @@ const enamelZFor = (goldTop: number, depth: number, bevel: number, lift = 0.002)
 
 /* Sampled off the reference: rendered sRGB targets. */
 const HEAD_COLOR = "#461805";
-const BAND_COLOR = "#120a04";
+const BAND_COLOR = "#0c0703";
 
 /* ------------------------------------------------------------------------ */
 
@@ -372,17 +371,22 @@ function PetalMaterial({ color }: { color: Color }) {
  * rather than saturated yellow — so every gold surface on this badge uses a
  * paler alloy than the shared die-struck gold.
  */
-function GoldMaterial() {
+function GoldMaterial({ roughness }: { roughness?: number }) {
   const { metalness, metalRoughness, envMapIntensity } = usePinMaterials();
   return (
     <meshStandardMaterial
       color="#f4d098"
       metalness={metalness}
-      roughness={Math.max(0.02, metalRoughness)}
-      envMapIntensity={envMapIntensity * 1.15}
+      roughness={Math.max(0.02, roughness ?? metalRoughness)}
+      envMapIntensity={envMapIntensity * 1.2}
     />
   );
 }
+
+/** Polished wire: a mirror crest that picks the frontal card up as one line. */
+const WIRE_ROUGHNESS = 0.1;
+/** Cast lettering: satin, so the faces average the room to a mid tan. */
+const TEXT_ROUGHNESS = 0.25;
 
 /**
  * Cloisonné walls between petals: in the reference they read as dark lines
@@ -401,7 +405,7 @@ function WallMaterial() {
  */
 function FloorMaterial() {
   const { envMapIntensity } = usePinMaterials();
-  return <meshStandardMaterial color="#d9b47a" metalness={1} roughness={0.45} envMapIntensity={envMapIntensity * 0.4} />;
+  return <meshStandardMaterial color="#7a5628" metalness={1} roughness={0.5} envMapIntensity={envMapIntensity * 0.35} />;
 }
 
 /**
@@ -578,32 +582,41 @@ function FlowerMedalBody() {
 
       {/* Rim channel: two fine wires over a dark satin floor. */}
       <mesh geometry={rimOuter} position={[0, 0, WIRE_Z]} castShadow receiveShadow>
-        <GoldMaterial />
+        <GoldMaterial roughness={WIRE_ROUGHNESS} />
       </mesh>
       <mesh geometry={rimFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
         <FloorMaterial />
       </mesh>
       <mesh geometry={rimInner} position={[0, 0, WIRE_Z]} receiveShadow>
-        <GoldMaterial />
+        <GoldMaterial roughness={WIRE_ROUGHNESS} />
       </mesh>
 
       {/* Black band with the struck lettering. */}
       <mesh geometry={bandGeometry} position={[0, 0, bandZ]} receiveShadow>
-        <EnamelMaterial color={BAND_COLOR} />
+        {/* Deep black lacquer: a softer coat than hard enamel so the panels
+            never lift it to grey — the reference band stays black. */}
+        <meshPhysicalMaterial
+          color={BAND_COLOR}
+          metalness={0}
+          roughness={0.35}
+          clearcoat={0.6}
+          clearcoatRoughness={0.18}
+          envMapIntensity={envMapIntensity * 0.45}
+        />
       </mesh>
       <mesh geometry={bandText} position={[0, 0, TEXT_Z]} receiveShadow>
-        <GoldMaterial />
+        <GoldMaterial roughness={TEXT_ROUGHNESS} />
       </mesh>
 
       {/* Inner ring channel. */}
       <mesh geometry={ringOuter} position={[0, 0, WIRE_Z]} receiveShadow>
-        <GoldMaterial />
+        <GoldMaterial roughness={WIRE_ROUGHNESS} />
       </mesh>
       <mesh geometry={ringFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
         <FloorMaterial />
       </mesh>
       <mesh geometry={ringInner} position={[0, 0, WIRE_Z]} receiveShadow>
-        <GoldMaterial />
+        <GoldMaterial roughness={WIRE_ROUGHNESS} />
       </mesh>
 
       {/* Red-orange candy glass field, meniscus rising against the ring. */}

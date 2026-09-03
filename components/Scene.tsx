@@ -14,7 +14,7 @@ import type { BadgeVariant } from "./badges";
 import type { PinMaterialSettings } from "./badges/materials";
 import { BadgeTransition } from "./BadgeTransition";
 import type { TransitionSettings } from "./BadgeTransition";
-import { Studio } from "./Studio";
+import { POST_OVERRIDES, Studio } from "./Studio";
 
 // Registered once at module scope so the component identity stays stable and
 // the effect instance is never rebuilt behind the composer's back.
@@ -242,8 +242,8 @@ export default function Scene() {
               then blooms, which is most of the dreamlike quality. */}
           <DreamBlur ref={dreamRef} />
           <Bloom
-            intensity={bloomIntensity}
-            luminanceThreshold={bloomThreshold}
+            intensity={POST_OVERRIDES[variant]?.bloomIntensity ?? bloomIntensity}
+            luminanceThreshold={POST_OVERRIDES[variant]?.bloomThreshold ?? bloomThreshold}
             luminanceSmoothing={0.25}
             mipmapBlur
             radius={0.75}
