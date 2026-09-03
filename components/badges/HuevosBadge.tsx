@@ -98,7 +98,7 @@ const EGGS: EggSpec[] = [
   {
     length: 0.66,
     width: 0.49,
-    centre: [-0.17, 0.02],
+    centre: [-0.17, 0.07],
     heading: 100,
     goldZ: FRONT_EGG_GOLD_Z,
     shine: { at: [-0.22, 0.2], size: [0.06, 0.13], tilt: 22 },
@@ -107,10 +107,10 @@ const EGGS: EggSpec[] = [
   {
     length: 0.6,
     width: 0.45,
-    centre: [0.21, 0.0],
+    centre: [0.22, 0.05],
     heading: 78,
     goldZ: BACK_EGG_GOLD_Z,
-    shine: { at: [-0.2, 0.22], size: [0.055, 0.12], tilt: 20 },
+    shine: { at: [-0.08, 0.27], size: [0.05, 0.11], tilt: 20 },
   },
 ];
 
@@ -118,11 +118,11 @@ const EGGS: EggSpec[] = [
 const EGG_TAPER = 0.17;
 
 /** Shallow dish beneath the eggs: a wide bowl with a slightly lipped rim. */
-const NEST = { centre: [0.02, -0.19] as [number, number], width: 1.0, depth: 0.27, rimSag: 0.05 };
+const NEST = { centre: [0.02, -0.15] as [number, number], width: 1.22, depth: 0.31, rimSag: 0.05 };
 
-const EGG_COLOR = "#e9a52a";
-const SHINE_COLOR = "#fbe4a0";
-const NEST_COLOR = "#4c1c06";
+const EGG_COLOR = "#f2b232";
+const SHINE_COLOR = "#fce9ad";
+const NEST_COLOR = "#56220a";
 
 /* Motion. */
 const DROP_HEIGHT = 0.42;
@@ -501,7 +501,7 @@ function CellMaterial({ color, envScale = 0.75 }: { color: ColorRepresentation; 
 
 /* ---- Eggs with motion -------------------------------------------------------- */
 
-const EGG_TINT: Tint = { edge: [0.9, 0.72, 0.42], hot: [0.02, 0.02, 0] };
+const EGG_TINT: Tint = { edge: [0.94, 0.8, 0.52], hot: [0.02, 0.02, 0] };
 const SHINE_TINT: Tint = { edge: [0.98, 0.95, 0.85], hot: [0, 0, 0] };
 const NEST_TINT: Tint = { edge: [0.7, 0.6, 0.55], hot: [0.1, 0.07, 0.02] };
 
