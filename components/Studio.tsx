@@ -10,8 +10,10 @@ import type { BadgeVariant } from "./badges";
  * touching how the other badges look.
  */
 type Rig = {
-  /** Tint of the key spot. */
+  /** Tint, position and relative strength of the key spot. */
   keyColor: string;
+  keyPosition: [number, number, number];
+  keyScale: number;
   /** Colour and relative strength of the second, opposing spot. */
   fillColor: string;
   fillScale: number;
@@ -32,6 +34,8 @@ type Rig = {
 
 const DEFAULT_RIG: Rig = {
   keyColor: "#fff3e4",
+  keyPosition: [4.5, 5, 6.5],
+  keyScale: 1,
   fillColor: "#8fb2ff",
   fillScale: 0.35,
   rightStripColor: "#bcd4ff",
@@ -45,21 +49,24 @@ const DEFAULT_RIG: Rig = {
 };
 
 const RIGS: Partial<Record<BadgeVariant, Partial<Rig>>> = {
-  /* The flower medal reference is lit warm all round: no cool fill anywhere,
-   * flat gold reads as dark satin with only bevel glints, and the glow around
-   * the metal is amber. So the blue sources go warm, and the frontal cards
-   * that lift camera-facing gold are dimmed so the flats stay dark. */
+  /* The flower medal reference is lit warm all round by a key from the upper
+   * left: every stroke and petal carries one glint on its upper-left edge and
+   * falls dark to the lower right, flat gold reads mid-tan, and the glow is
+   * amber. So the blue sources go warm, the key spot moves to the upper left,
+   * the right-hand strip is dimmed, and the frontal cards are eased back. */
   flowerMedal: {
-    keyColor: "#ffe9cc",
-    fillColor: "#ffc98a",
+    keyColor: "#fff3e4",
+    keyPosition: [-4.5, 5.5, 6],
+    keyScale: 1.5,
+    fillColor: "#ffd9b0",
     fillScale: 0.25,
-    rightStripColor: "#ffd9a8",
-    rightStripIntensity: 3,
-    fillPanelColor: "#ffe2bd",
-    frontalCardColor: "#fff1e2",
-    frontalCardIntensity: 0.2,
-    softboxColor: "#fff5ea",
-    softboxIntensity: 1.8,
+    rightStripColor: "#ffe9d2",
+    rightStripIntensity: 1.5,
+    fillPanelColor: "#fff0dd",
+    frontalCardColor: "#fff6ec",
+    frontalCardIntensity: 0.22,
+    softboxColor: "#fff8f0",
+    softboxIntensity: 2,
     kickerIntensity: 5,
   },
 };
@@ -85,10 +92,10 @@ export function Studio({ spotIntensity, variant }: { spotIntensity: number; vari
       <ambientLight intensity={0.03} />
 
       <spotLight
-        position={[4.5, 5, 6.5]}
+        position={rig.keyPosition}
         angle={0.5}
         penumbra={0.9}
-        intensity={spotIntensity}
+        intensity={spotIntensity * rig.keyScale}
         color={rig.keyColor}
       />
       <spotLight

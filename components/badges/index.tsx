@@ -25,7 +25,7 @@ export const BADGE_PRESETS: Record<BadgeVariant, { metal: MetalKind; enamelColor
   medallion: { metal: "gold", enamelColor: "#e85410" },
   hex: { metal: "chrome", enamelColor: "#ff5a00" },
   warMedal: { metal: "chrome", enamelColor: "#ff7519" },
-  flowerMedal: { metal: "gold", enamelColor: "#ff5222" },
+  flowerMedal: { metal: "gold", enamelColor: "#ff3d12" },
   huevosBadge: { metal: "gold", enamelColor: "#0f9c74" },
   packaged: { metal: "gold", enamelColor: "#d8341f" },
   boxed: { metal: "gold", enamelColor: "#b81f3d" },
