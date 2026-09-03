@@ -57,7 +57,7 @@ const FLOOR_DEPTH = 0.03;
  * half-round wire would otherwise reflect the black horizon as a dark line. */
 const FLOOR_Z = RIM_FRONT - 0.016 - FLOOR_DEPTH / 2;
 
-/* Text band: cap height 0.16R centred on 0.83R. */
+/* Text band: letters span 0.745–0.915R in the reference; centred on 0.826R. */
 const TEXT_RADIUS = at(0.826);
 const TEXT_SIZE = 0.19;
 /** The reference typeface is a condensed grotesque; Helvetiker is squeezed. */
@@ -81,7 +81,7 @@ const FONT_URL = "/fonts/typeface.json";
 
 /* Sunflower: two staggered rings of twelve petals around a dark seed head.
  * Inner petals run pure yellow to 0.455R and tip out near 0.48R; outer tips
- * reach 0.60R; the head fills 0.285R. Widths make neighbours just touch. */
+ * reach 0.60R; pure head shows to 0.27R. Widths make neighbours just touch. */
 const PETAL_COUNT = 12;
 const OUTER_PETAL = { base: at(0.3), tip: at(0.605), width: 0.29 };
 const INNER_PETAL = { base: at(0.24), tip: at(0.485), width: 0.225 };
