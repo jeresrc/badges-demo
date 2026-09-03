@@ -77,7 +77,7 @@ export type PostOverrides = { bloomIntensity?: number; bloomThreshold?: number }
 export const POST_OVERRIDES: Partial<Record<BadgeVariant, PostOverrides>> = {
   /* The reference glows: every gold glint and the hot field carry a soft
    * amber halo, so bloom starts lower and pushes harder for this badge. */
-  flowerMedal: { bloomIntensity: 0.7, bloomThreshold: 0.9 },
+  flowerMedal: { bloomIntensity: 0.85, bloomThreshold: 0.88 },
 };
 
 /**

@@ -39,21 +39,23 @@ const RIM_WIRE_INNER: [number, number] = [at(0.9565), at(0.9645)];
 const RIM_FLOOR: [number, number] = [at(0.962), at(0.995)];
 
 /* Inner ring: the same channel form, glints at 0.665R and 0.70R. */
-const RING_WIRE_OUTER: [number, number] = [at(0.697), at(0.706)];
+const RING_WIRE_OUTER: [number, number] = [at(0.70), at(0.708)];
 const RING_WIRE_INNER: [number, number] = [at(0.661), at(0.669)];
-const RING_FLOOR: [number, number] = [at(0.665), at(0.702)];
+const RING_FLOOR: [number, number] = [at(0.665), at(0.704)];
 /** Red field runs out to the inner wire. */
 const FIELD_RADIUS = at(0.665);
 
 /** Black band between the ring and the rim. */
-const BAND: [number, number] = [at(0.704), at(0.96)];
+const BAND: [number, number] = [at(0.706), at(0.96)];
 
 const WIRE_DEPTH = 0.05;
 /** Wires are half-round: bevel ≈ half the width so the crest is a rounded ridge. */
 const WIRE_BEVEL = 0.004;
 const WIRE_Z = RIM_FRONT - WIRE_DEPTH / 2 - WIRE_BEVEL;
 const FLOOR_DEPTH = 0.03;
-const FLOOR_Z = RIM_FRONT - 0.04 - FLOOR_DEPTH / 2;
+/** Floors meet the wires just under their crests: the lower half of a
+ * half-round wire would otherwise reflect the black horizon as a dark line. */
+const FLOOR_Z = RIM_FRONT - 0.016 - FLOOR_DEPTH / 2;
 
 /* Text band: cap height 0.16R centred on 0.83R. */
 const TEXT_RADIUS = at(0.826);
@@ -63,7 +65,7 @@ const TEXT_CONDENSE = 0.66;
 const TEXT_TRACKING = 0.004;
 const TEXT_DEPTH = 0.036;
 /** Also fattens the strokes: the reference letters are bold. */
-const TEXT_BEVEL = 0.009;
+const TEXT_BEVEL = 0.011;
 /** Glyph bases sink just into the black enamel so they read as struck metal. */
 const TEXT_Z = RIM_FRONT - ENAMEL_RECESS - 0.008 + TEXT_DEPTH / 2;
 /** Three repeats read clockwise, tops outward — centre angle of each. */
@@ -405,7 +407,7 @@ function WallMaterial() {
  */
 function FloorMaterial() {
   const { envMapIntensity } = usePinMaterials();
-  return <meshStandardMaterial color="#7a5628" metalness={1} roughness={0.5} envMapIntensity={envMapIntensity * 0.35} />;
+  return <meshStandardMaterial color="#8a6230" metalness={1} roughness={0.5} envMapIntensity={envMapIntensity * 0.35} />;
 }
 
 /**
@@ -581,7 +583,7 @@ function FlowerMedalBody() {
       <BackPlate shape={back} metal="gold" />
 
       {/* Rim channel: two fine wires over a dark satin floor. */}
-      <mesh geometry={rimOuter} position={[0, 0, WIRE_Z]} castShadow receiveShadow>
+      <mesh geometry={rimOuter} position={[0, 0, WIRE_Z]} receiveShadow>
         <GoldMaterial roughness={WIRE_ROUGHNESS} />
       </mesh>
       <mesh geometry={rimFloor} position={[0, 0, FLOOR_Z]} receiveShadow>
