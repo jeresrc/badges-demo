@@ -1,23 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFont } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import type { ThreeEvent } from "@react-three/fiber";
-import {
-  Color,
-  DataTexture,
-  ExtrudeGeometry,
-  Float32BufferAttribute,
-  LatheGeometry,
-  LinearFilter,
-  LinearMipmapLinearFilter,
-  RepeatWrapping,
-  Shape,
-  Vector2,
-  Vector3,
-} from "three";
-import type { BufferGeometry, Group, Mesh } from "three";
+import { Color, ExtrudeGeometry, Float32BufferAttribute, Shape, Vector2, Vector3 } from "three";
+import type { BufferGeometry, ColorRepresentation, Group } from "three";
 import { TessellateModifier } from "three/examples/jsm/modifiers/TessellateModifier.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { CandyEnamelMaterial, MetalMaterial, usePinMaterials } from "./materials";
@@ -27,6 +15,7 @@ import {
   PIN_HALF_SIZE,
   RIM_FRONT,
   extrudeCentered,
+  offsetPolygon,
   polygonShape,
   starShape,
 } from "./shapes";
@@ -61,21 +50,37 @@ const RULE_THICKNESS = 0.028;
  * the caption's stars (angles from +X, radians). */
 const RULE_SPAN = 0.34;
 const RULE_CENTERS = [(34 / 180) * Math.PI, (146 / 180) * Math.PI];
+const STAR_ADVANCE = 0.16;
 
 const FONT_URL = "/fonts/typeface.json";
 
 /* Z stack — see FlowerMedal: ExtrudeGeometry caps sit at depth/2 + bevel. */
 const topOf = (z: number, depth: number, bevel: number) => z + depth / 2 + bevel;
+const enamelZFor = (goldTop: number, depth: number, bevel: number, lift = 0.002) =>
+  goldTop + lift - depth / 2 - bevel;
 
 const FIELD_Z = 0.006;
 const FIELD_DEPTH = 0.04;
 const FIELD_BEVEL = 0.012;
-const FIELD_SHOULDER = 0.016;
-const FIELD_TOP = topOf(FIELD_Z, FIELD_DEPTH, FIELD_BEVEL);
-const DISH_DEPTH = 0.03;
+const FIELD_SHOULDER = 0.014;
+
+/* Cloisonné cells share the sunflower's construction exactly: a struck gold
+ * wall, an enamel slab inset by the wire width, and a gentle pillow. */
+const OUTLINE = 0.01;
+const CELL_GOLD_DEPTH = 0.05;
+const CELL_GOLD_BEVEL = 0.005;
+const CELL_ENAMEL_DEPTH = 0.03;
+const CELL_ENAMEL_BEVEL = 0.004;
+const CELL_SHOULDER = 0.009;
+
+/** Each layer stands a little prouder than the one it overlaps. */
+const NEST_GOLD_Z = 0.04;
+const BACK_EGG_GOLD_Z = 0.052;
+const FRONT_EGG_GOLD_Z = 0.064;
+const SHINE_GOLD_Z = 0.076;
 
 /* ------------------------------------------------------------------------ */
-/* The eggs                                                                 */
+/* The graphic: two golden eggs nestled in a shallow dish.                   */
 
 type EggSpec = {
   length: number;
@@ -83,39 +88,57 @@ type EggSpec = {
   centre: [number, number];
   /** Direction of the narrow end, degrees from +X. */
   heading: number;
-  /** Reveal delay so the pair does not land as one. */
-  delay: number;
-  seed: number;
+  goldZ: number;
+  /** Highlight cell, in egg-local units of (width, length). */
+  shine: { at: [number, number]; size: [number, number]; tilt: number };
 };
 
-/** Two real eggs: one a touch larger, lying blunt-end to blunt-end in a nest. */
 const EGGS: EggSpec[] = [
-  { length: 0.53, width: 0.39, centre: [-0.245, 0.02], heading: 151, delay: 0, seed: 3 },
-  { length: 0.49, width: 0.365, centre: [0.25, -0.01], heading: 24, delay: 0.09, seed: 11 },
+  // Front egg: a touch larger, leaning left.
+  {
+    length: 0.66,
+    width: 0.49,
+    centre: [-0.17, 0.02],
+    heading: 100,
+    goldZ: FRONT_EGG_GOLD_Z,
+    shine: { at: [-0.22, 0.2], size: [0.06, 0.13], tilt: 22 },
+  },
+  // Back egg: tucked behind the first, leaning right.
+  {
+    length: 0.6,
+    width: 0.45,
+    centre: [0.21, 0.0],
+    heading: 78,
+    goldZ: BACK_EGG_GOLD_Z,
+    shine: { at: [-0.2, 0.22], size: [0.055, 0.12], tilt: 20 },
+  },
 ];
 
 /** Egg profile: widest a little below the middle, closing to a narrower top. */
 const EGG_TAPER = 0.17;
-const EGG_PROFILE_STEPS = 44;
-const EGG_SEGMENTS = 72;
+
+/** Shallow dish beneath the eggs: a wide bowl with a slightly lipped rim. */
+const NEST = { centre: [0.02, -0.19] as [number, number], width: 1.0, depth: 0.27, rimSag: 0.05 };
+
+const EGG_COLOR = "#e9a52a";
+const SHINE_COLOR = "#fbe4a0";
+const NEST_COLOR = "#4c1c06";
 
 /* Motion. */
-const DROP_HEIGHT = 0.6;
-const GRAVITY = 6;
-const RESTITUTION = 0.34;
-const SETTLE_SPEED = 0.28;
+const DROP_HEIGHT = 0.42;
+const GRAVITY = 5.5;
+const RESTITUTION = 0.32;
+const SETTLE_SPEED = 0.25;
 /** Frames must be flowing smoothly for this long before the reveal starts —
  * on first paint the GPU is still compiling shaders and nothing is presented,
  * so a drop that started at mount would be over before anyone saw it. */
 const WARMUP_FRAMES = 4;
 const WARMUP_SMOOTH_DELTA = 0.05;
 const REVEAL_DELAY = 0.35;
-const PITCH_STIFFNESS = 120;
-const PITCH_DAMPING = 6.5;
-const YAW_STIFFNESS = 90;
-const YAW_DAMPING = 7;
-const HOVER_KICK = 1.4;
-const MAX_TILT = 0.12;
+const ROCK_STIFFNESS = 140;
+const ROCK_DAMPING = 7;
+const HOVER_KICK = 0.9;
+const MAX_ROCK = 0.09;
 
 /* ------------------------------------------------------------------------ */
 
@@ -130,18 +153,6 @@ function smooth(t: number) {
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
-/** Deterministic PRNG so the speckle pattern never changes between renders. */
-function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 /* ---- Ellipse helpers ---------------------------------------------------- */
 
 /** Point on the parallel curve `d` inside the ellipse (a, b) at angle theta. */
@@ -154,7 +165,7 @@ function ellipseOffsetPoint(a: number, b: number, d: number, theta: number, targ
   return target.set(a * c - d * nx * inv, b * s - d * ny * inv);
 }
 
-function ellipseOffsetPoints(a: number, b: number, d: number, count = 192, from = 0, to = Math.PI * 2): Vector2[] {
+function ellipseOffsetPoints(a: number, b: number, d: number, count: number, from: number, to: number): Vector2[] {
   const points: Vector2[] = [];
   for (let i = 0; i < count; i++) {
     const theta = from + ((to - from) * i) / (count - 1);
@@ -163,13 +174,12 @@ function ellipseOffsetPoints(a: number, b: number, d: number, count = 192, from 
   return points;
 }
 
+const FULL_TURN = Math.PI * 2 * (1 - 1 / 192);
+
 /** Closed parallel curve as a shape, optionally with a parallel-curve hole. */
 function ovalShape(outerOffset: number, innerOffset?: number): Shape {
-  const outer = ellipseOffsetPoints(A, B, outerOffset, 192, 0, Math.PI * 2 * (1 - 1 / 192));
-  const inner =
-    innerOffset === undefined
-      ? undefined
-      : ellipseOffsetPoints(A, B, innerOffset, 192, 0, Math.PI * 2 * (1 - 1 / 192));
+  const outer = ellipseOffsetPoints(A, B, outerOffset, 192, 0, FULL_TURN);
+  const inner = innerOffset === undefined ? undefined : ellipseOffsetPoints(A, B, innerOffset, 192, 0, FULL_TURN);
   return polygonShape(outer, inner);
 }
 
@@ -219,9 +229,28 @@ function ovalTrack(offset: number) {
   return { total, sAt, at };
 }
 
-/* ---- Resin ---------------------------------------------------------------- */
+/* ---- Resin (mirrors FlowerMedal) ------------------------------------------ */
 
-type HeightField = (x: number, y: number) => number;
+type EdgeDistance = (x: number, y: number) => number;
+
+/** Distance from (x, y) to the nearest edge of a closed polygon. */
+function polygonDistance(points: Vector2[]): EdgeDistance {
+  return (x, y) => {
+    let best = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      const ex = b.x - a.x;
+      const ey = b.y - a.y;
+      const lengthSq = ex * ex + ey * ey || 1e-12;
+      const t = clamp01(((x - a.x) * ex + (y - a.y) * ey) / lengthSq);
+      const dx = x - (a.x + ex * t);
+      const dy = y - (a.y + ey * t);
+      best = Math.min(best, dx * dx + dy * dy);
+    }
+    return Math.sqrt(best);
+  };
+}
 
 function buildResinSlab(shape: Shape, depth: number, bevel: number, tessellation: number): BufferGeometry {
   const geometry = new ExtrudeGeometry(shape, {
@@ -234,20 +263,18 @@ function buildResinSlab(shape: Shape, depth: number, bevel: number, tessellation
     bevelSegments: 4,
   });
   geometry.translate(0, 0, -depth / 2);
-  const tessellated = new TessellateModifier(tessellation, 14).modify(geometry);
+  const tessellated = new TessellateModifier(tessellation, 12).modify(geometry);
   geometry.dispose();
   tessellated.deleteAttribute("normal");
   tessellated.deleteAttribute("uv");
   return mergeVertices(tessellated, 1e-4);
 }
 
-/**
- * Displace the front cap by an arbitrary height field (meniscus rising to the
- * wall, dishes sinking under the eggs) with analytic cap normals so the
- * tessellation never shows as facets.
- */
-function displaceCap(geometry: BufferGeometry, height: HeightField) {
+/** Poured-enamel meniscus rising from the cell wall, with analytic cap normals. */
+function pourResin(geometry: BufferGeometry, edge: EdgeDistance, shoulder: number, meniscus: number) {
   const position = geometry.attributes.position;
+  const height = (x: number, y: number) => shoulder * smooth(edge(x, y) / meniscus);
+
   let zFront = -Infinity;
   for (let i = 0; i < position.count; i++) zFront = Math.max(zFront, position.getZ(i));
   const onCap: boolean[] = new Array(position.count);
@@ -259,157 +286,126 @@ function displaceCap(geometry: BufferGeometry, height: HeightField) {
   geometry.computeVertexNormals();
 
   const normal = geometry.attributes.normal;
-  const eps = 0.004;
+  const eps = 0.005;
   for (let i = 0; i < position.count; i++) {
     if (!onCap[i]) continue;
     const x = position.getX(i);
     const y = position.getY(i);
     const dx = (height(x + eps, y) - height(x - eps, y)) / (2 * eps);
     const dy = (height(x, y + eps) - height(x, y - eps)) / (2 * eps);
-    const inv = 1 / Math.hypot(dx, dy, 1);
-    normal.setXYZ(i, -dx * inv, -dy * inv, inv);
+    const inverseLength = 1 / Math.hypot(dx, dy, 1);
+    normal.setXYZ(i, -dx * inverseLength, -dy * inverseLength, inverseLength);
   }
   normal.needsUpdate = true;
   geometry.computeBoundingSphere();
   return geometry;
 }
 
-/** Normalised elliptical radius of (x, y) inside the dish under an egg. */
-function dishRadius(spec: EggSpec, x: number, y: number) {
-  const heading = rad(spec.heading);
-  const dx = x - spec.centre[0];
-  const dy = y - spec.centre[1];
-  const along = dx * Math.cos(heading) + dy * Math.sin(heading);
-  const across = -dx * Math.sin(heading) + dy * Math.cos(heading);
-  const ra = (spec.length / 2) * 0.86;
-  const rb = (spec.width / 2) * 0.92;
-  return Math.hypot(along / ra, across / rb);
-}
-
-/* ---- Egg geometry ---------------------------------------------------------- */
-
-/**
- * Real egg: a lathe of the classic asymmetric profile, then a whisper of
- * low-frequency unevenness so neither egg is a perfect solid of revolution.
- */
-function buildEgg(length: number, width: number, seed: number): BufferGeometry {
-  const profile: Vector2[] = [];
-  for (let i = 0; i <= EGG_PROFILE_STEPS; i++) {
-    const t = -Math.cos((i / EGG_PROFILE_STEPS) * Math.PI); // -1 .. 1, dense at the poles
-    const r = Math.sqrt(Math.max(0, 1 - t * t)) * (1 - EGG_TAPER * t);
-    profile.push(new Vector2((r * width) / 2, (t * length) / 2));
-  }
-  profile[0].x = 0;
-  profile[EGG_PROFILE_STEPS].x = 0;
-
-  const geometry = new LatheGeometry(profile, EGG_SEGMENTS);
+/** Tonal vertex tints: deeper toward the wall, a touch lifted in the middle. */
+function tintResin(
+  geometry: BufferGeometry,
+  edge: EdgeDistance,
+  edgeWidth: number,
+  edgeTint: [number, number, number],
+  hotTint: [number, number, number],
+) {
   const position = geometry.attributes.position;
-  const normal = geometry.attributes.normal;
-  const random = mulberry32(seed);
-  const phase1 = random() * Math.PI * 2;
-  const phase2 = random() * Math.PI * 2;
-  const amount = width * 0.006;
+  const colors = new Float32Array(position.count * 3);
   for (let i = 0; i < position.count; i++) {
-    const x = position.getX(i);
-    const y = position.getY(i);
-    const z = position.getZ(i);
-    const phi = Math.atan2(z, x);
-    const v = (y / (length / 2)) * Math.PI;
-    const wobble = Math.sin(phi + phase1) * Math.cos(v * 0.5) + 0.5 * Math.sin(2 * phi + phase2 + v);
-    const d = amount * wobble * Math.max(0, 1 - Math.abs(y / (length / 2)) ** 3);
-    position.setXYZ(i, x + normal.getX(i) * d, y + normal.getY(i) * d, z + normal.getZ(i) * d);
+    const wall = 1 - smooth(edge(position.getX(i), position.getY(i)) / edgeWidth);
+    const hot = 1 - wall;
+    colors[i * 3] = 1 + (edgeTint[0] - 1) * wall + hotTint[0] * hot;
+    colors[i * 3 + 1] = 1 + (edgeTint[1] - 1) * wall + hotTint[1] * hot;
+    colors[i * 3 + 2] = 1 + (edgeTint[2] - 1) * wall + hotTint[2] * hot;
   }
-  geometry.computeVertexNormals();
-  // Lathe seam: the first and last column are the same points — share normals.
-  const columns = profile.length;
-  const n = geometry.attributes.normal;
-  for (let j = 0; j < columns; j++) {
-    const a = j;
-    const b = EGG_SEGMENTS * columns + j;
-    const nx = n.getX(a) + n.getX(b);
-    const ny = n.getY(a) + n.getY(b);
-    const nz = n.getZ(a) + n.getZ(b);
-    const inv = 1 / (Math.hypot(nx, ny, nz) || 1);
-    n.setXYZ(a, nx * inv, ny * inv, nz * inv);
-    n.setXYZ(b, nx * inv, ny * inv, nz * inv);
-  }
-  n.needsUpdate = true;
-  geometry.computeBoundingSphere();
+  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
   return geometry;
 }
 
+type Tint = { edge: [number, number, number]; hot: [number, number, number] };
+
 /**
- * Shell speckle as a texture rather than a shader patch (the transition
- * already owns `onBeforeCompile`). R carries a bump height, G a roughness
- * multiplier: tiny pits and flecks scatter the highlight the way a real shell
- * — or a cast-and-brushed gold one — breaks up a mirror reflection.
+ * One cloisonné cell, built the way the sunflower petals are: the outline is
+ * struck gold, the enamel is a slab inset by the wire width with a soft
+ * pillow rising from the wall. Returns both geometries in the shape's frame.
  */
-function buildSpeckleTexture(seed: number): DataTexture {
-  const W = 512;
-  const H = 256;
-  const data = new Uint8Array(W * H * 4);
-  const random = mulberry32(seed);
+function buildCell(outline: Shape, width: number, tint: Tint, divisions = 48) {
+  const points = outline.getPoints(divisions);
+  const cell = offsetPolygon(points, OUTLINE, 3);
+  const edge = polygonDistance(cell);
+  const gold = extrudeCentered(outline, {
+    depth: CELL_GOLD_DEPTH,
+    bevel: CELL_GOLD_BEVEL,
+    curveSegments: divisions,
+    bevelSegments: 3,
+  });
+  const enamel = tintResin(
+    pourResin(
+      buildResinSlab(polygonShape(cell), CELL_ENAMEL_DEPTH, CELL_ENAMEL_BEVEL, 0.02),
+      edge,
+      CELL_SHOULDER,
+      width * 0.45,
+    ),
+    edge,
+    width * 0.18,
+    tint.edge,
+    tint.hot,
+  );
+  return { gold, enamel };
+}
 
-  const bump = new Float32Array(W * H).fill(0.5);
-  const rough = new Float32Array(W * H).fill(0.72);
+const cellEnamelZ = (goldZ: number) =>
+  enamelZFor(topOf(goldZ, CELL_GOLD_DEPTH, CELL_GOLD_BEVEL), CELL_ENAMEL_DEPTH, CELL_ENAMEL_BEVEL);
 
-  // Fine grain everywhere.
-  for (let i = 0; i < W * H; i++) {
-    const g = (random() - 0.5) * 0.06;
-    bump[i] += g * 0.5;
-    rough[i] += g;
+/* ---- Shapes ------------------------------------------------------------------ */
+
+/** Egg outline pointing up the +Y axis, centred on the origin. */
+function eggShape(length: number, width: number, steps = 40): Shape {
+  const right: Vector2[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = -Math.cos((i / steps) * Math.PI); // -1 .. 1, dense at the poles
+    const r = Math.sqrt(Math.max(0, 1 - t * t)) * (1 - EGG_TAPER * t);
+    right.push(new Vector2((r * width) / 2, (t * length) / 2));
   }
+  const left = right
+    .slice(1, -1)
+    .reverse()
+    .map((p) => new Vector2(-p.x, p.y));
+  return polygonShape([...right, ...left]);
+}
 
-  // Speckles: many tiny, a few larger and softer.
-  const count = 2600;
-  for (let k = 0; k < count; k++) {
-    const cx = random() * W;
-    const cy = random() * H;
-    const large = random() < 0.12;
-    const radius = large ? 1.6 + random() * 2.2 : 0.6 + random() * 1.1;
-    const depth = (large ? 0.16 : 0.26) * (0.6 + random() * 0.4);
-    const roughBoost = large ? 0.22 : 0.3;
-    const r2 = Math.ceil(radius) + 1;
-    for (let dy = -r2; dy <= r2; dy++) {
-      for (let dx = -r2; dx <= r2; dx++) {
-        const px = (((Math.floor(cx) + dx) % W) + W) % W;
-        const py = (((Math.floor(cy) + dy) % H) + H) % H;
-        const dist = Math.hypot(Math.floor(cx) + dx + 0.5 - cx, Math.floor(cy) + dy + 0.5 - cy);
-        const f = 1 - smooth(dist / radius);
-        if (f <= 0) continue;
-        const idx = py * W + px;
-        bump[idx] -= depth * f;
-        rough[idx] = Math.min(1, rough[idx] + roughBoost * f);
-      }
-    }
+/** Small tilted oval — the illustrator's highlight on a glossy egg. */
+function shineShape(rx: number, ry: number, tilt: number, cx: number, cy: number): Shape {
+  const points: Vector2[] = [];
+  const c = Math.cos(rad(tilt));
+  const s = Math.sin(rad(tilt));
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    const x = Math.cos(a) * rx;
+    const y = Math.sin(a) * ry;
+    points.push(new Vector2(cx + x * c - y * s, cy + x * s + y * c));
   }
+  return polygonShape(points);
+}
 
-  for (let i = 0; i < W * H; i++) {
-    data[i * 4] = Math.round(clamp01(bump[i]) * 255);
-    data[i * 4 + 1] = Math.round(clamp01(rough[i]) * 255);
-    data[i * 4 + 2] = 128;
-    data[i * 4 + 3] = 255;
-  }
-
-  const texture = new DataTexture(data, W, H);
-  texture.wrapS = RepeatWrapping;
-  texture.wrapT = RepeatWrapping;
-  texture.magFilter = LinearFilter;
-  texture.minFilter = LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
-  texture.anisotropy = 8;
-  texture.needsUpdate = true;
-  return texture;
+/** Wide shallow dish: a sagging rim over a half-ellipse bowl. */
+function nestShape(): Shape {
+  const [cx, cy] = NEST.centre;
+  const hw = NEST.width / 2;
+  const shape = new Shape();
+  shape.moveTo(cx - hw, cy);
+  shape.quadraticCurveTo(cx, cy - NEST.rimSag * 2, cx + hw, cy);
+  shape.absellipse(cx, cy, hw, NEST.depth, 0, -Math.PI, true, 0);
+  shape.closePath();
+  return shape;
 }
 
 /* ---- Band lettering --------------------------------------------------------- */
 
-const STAR_ADVANCE = 0.16;
-
 /**
  * "HUEVOS" across the top reading clockwise with glyph tops outward;
  * "★ HELD THROUGH IT ALL ★" along the bottom reading left to right with tops
- * inward, the way a medal caption sits; two short rules on the flanks.
+ * inward, the way a medal caption sits; two short rules on the upper flanks.
  */
 function useBandText() {
   const font = useFont(FONT_URL);
@@ -433,9 +429,7 @@ function useBandText() {
           // Reading direction along the track: clockwise (-s) on top, CCW (+s) below.
           const s = s0 + direction * (cursor + advance / 2 - total / 2);
           const { point, tangent } = track.at(s);
-          const tx = tangent.x * direction;
-          const ty = tangent.y * direction;
-          const angle = Math.atan2(ty, tx);
+          const angle = Math.atan2(tangent.y * direction, tangent.x * direction);
           let glyph: BufferGeometry;
           if (char === "★") {
             glyph = extrudeCentered(starShape(5, size * 0.36, size * 0.16), {
@@ -486,126 +480,153 @@ function useBandText() {
   }, [font]);
 }
 
+/* ---- Materials ---------------------------------------------------------------- */
+
+/** Satin hard enamel, same recipe as the sunflower petals. */
+function CellMaterial({ color, envScale = 0.75 }: { color: ColorRepresentation; envScale?: number }) {
+  const { envMapIntensity } = usePinMaterials();
+  return (
+    <meshPhysicalMaterial
+      color={color}
+      vertexColors
+      metalness={0}
+      roughness={0.42}
+      clearcoat={0.8}
+      clearcoatRoughness={0.28}
+      reflectivity={0.35}
+      envMapIntensity={envMapIntensity * envScale}
+    />
+  );
+}
+
 /* ---- Eggs with motion -------------------------------------------------------- */
 
-type EggMotion = {
-  z: number;
-  vz: number;
-  pitch: number;
-  vPitch: number;
-  yaw: number;
-  vYaw: number;
-  delay: number;
-  warm: number;
-  landed: boolean;
-};
+const EGG_TINT: Tint = { edge: [0.9, 0.72, 0.42], hot: [0.02, 0.02, 0] };
+const SHINE_TINT: Tint = { edge: [0.98, 0.95, 0.85], hot: [0, 0, 0] };
+const NEST_TINT: Tint = { edge: [0.7, 0.6, 0.55], hot: [0.1, 0.07, 0.02] };
+
+type Rock = { angle: number; velocity: number };
 
 const localPoint = new Vector3();
 
 /**
- * One golden egg in its dish. Idle it is perfectly still; on hover it rocks
- * gently about its resting point and damps out; on mount it drops from just
- * above and bounces once or twice into place.
+ * One flat enamel egg with its highlight cell. Hovering rocks it a few
+ * degrees about the point where it touches the nest, damping out.
  */
-function Egg({ spec, restZ, speckle }: { spec: EggSpec; restZ: number; speckle: DataTexture }) {
-  const { envMapIntensity } = usePinMaterials();
-  const geometry = useMemo(() => buildEgg(spec.length, spec.width, spec.seed), [spec]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
+function Egg({ spec, pair }: { spec: EggSpec; pair: React.RefObject<Group | null> }) {
+  const cells = useMemo(() => {
+    const egg = buildCell(eggShape(spec.length, spec.width), spec.width, EGG_TINT, 80);
+    const [sx, sy] = spec.shine.at;
+    const [rx, ry] = spec.shine.size;
+    const shine = buildCell(
+      shineShape(rx, ry, spec.shine.tilt, sx * spec.width, sy * spec.length),
+      rx * 2,
+      SHINE_TINT,
+      40,
+    );
+    return { egg, shine };
+  }, [spec]);
 
-  const outer = useRef<Group>(null);
-  const inner = useRef<Mesh>(null);
-  const motion = useRef<EggMotion>({
-    z: DROP_HEIGHT,
-    vz: 0,
-    pitch: 0,
-    vPitch: 0,
-    yaw: 0,
-    vYaw: 0,
-    delay: REVEAL_DELAY + spec.delay,
-    warm: 0,
-    landed: false,
-  });
-  const random = useRef(mulberry32(spec.seed * 7919));
+  const pivot = useRef<Group>(null);
+  const rock = useRef<Rock>({ angle: 0, velocity: 0 });
+
+  // The egg rocks about its lowest point — the blunt end resting in the nest.
+  const heading = rad(spec.heading);
+  const half = spec.length / 2;
+  const pivotAt: [number, number] = [
+    spec.centre[0] - Math.cos(heading) * half,
+    spec.centre[1] - Math.sin(heading) * half,
+  ];
 
   const kick = (event: ThreeEvent<PointerEvent>) => {
-    const mesh = inner.current;
-    const m = motion.current;
-    if (!mesh || !m.landed) return;
-    // Which end was touched decides which way the egg dips.
-    mesh.worldToLocal(localPoint.copy(event.point));
-    const end = Math.sign(localPoint.y) || 1;
-    const side = Math.sign(localPoint.x) || 1;
-    m.vPitch += -end * HOVER_KICK * (0.8 + 0.4 * random.current());
-    m.vYaw += side * HOVER_KICK * 0.35 * (0.7 + 0.6 * random.current());
+    const group = pivot.current;
+    if (!group || !pair.current || pair.current.userData.landed !== true) return;
+    group.worldToLocal(localPoint.copy(event.point));
+    const side = Math.sign(localPoint.x - (spec.centre[0] - pivotAt[0])) || 1;
+    rock.current.velocity += -side * HOVER_KICK;
   };
 
   useFrame((_, rawDelta) => {
-    const m = motion.current;
+    const r = rock.current;
     const dt = Math.min(rawDelta, 1 / 30);
-    if (!outer.current || !inner.current) return;
-
-    if (m.warm < WARMUP_FRAMES) {
-      m.warm = rawDelta < WARMUP_SMOOTH_DELTA ? m.warm + 1 : 0;
-    } else if (m.delay > 0) {
-      m.delay -= dt;
-    } else if (!m.landed) {
-      m.vz -= GRAVITY * dt;
-      m.z += m.vz * dt;
-      if (m.z <= 0) {
-        m.z = 0;
-        if (Math.abs(m.vz) < SETTLE_SPEED) {
-          m.vz = 0;
-          m.landed = true;
-        } else {
-          m.vz = -m.vz * RESTITUTION;
-          // A little rock on impact, alternating ends.
-          const dir = random.current() < 0.5 ? -1 : 1;
-          m.vPitch += dir * Math.abs(m.vz) * 1.1;
-          m.vYaw += (random.current() - 0.5) * Math.abs(m.vz) * 0.6;
-        }
-      }
-    }
-
-    // Damped rocking springs (semi-implicit Euler).
-    m.vPitch += (-PITCH_STIFFNESS * m.pitch - PITCH_DAMPING * m.vPitch) * dt;
-    m.pitch += m.vPitch * dt;
-    m.vYaw += (-YAW_STIFFNESS * m.yaw - YAW_DAMPING * m.vYaw) * dt;
-    m.yaw += m.vYaw * dt;
-    m.pitch = Math.max(-MAX_TILT, Math.min(MAX_TILT, m.pitch));
-    m.yaw = Math.max(-MAX_TILT, Math.min(MAX_TILT, m.yaw));
-    if (m.landed && Math.abs(m.pitch) < 1e-4 && Math.abs(m.vPitch) < 1e-3) m.pitch = m.vPitch = 0;
-    if (m.landed && Math.abs(m.yaw) < 1e-4 && Math.abs(m.vYaw) < 1e-3) m.yaw = m.vYaw = 0;
-
-    // Rocking happens about the contact point, so the lifted end rises and the
-    // other never sinks into the enamel.
-    const lift = Math.abs(Math.sin(m.pitch)) * (spec.length / 2) * 0.45;
-    outer.current.position.z = restZ + m.z + lift;
-    outer.current.rotation.z = rad(spec.heading) - Math.PI / 2 + m.yaw;
-    inner.current.rotation.x = m.pitch;
+    r.velocity += (-ROCK_STIFFNESS * r.angle - ROCK_DAMPING * r.velocity) * dt;
+    r.angle += r.velocity * dt;
+    r.angle = Math.max(-MAX_ROCK, Math.min(MAX_ROCK, r.angle));
+    if (Math.abs(r.angle) < 1e-4 && Math.abs(r.velocity) < 1e-3) r.angle = r.velocity = 0;
+    if (pivot.current) pivot.current.rotation.z = r.angle;
   });
 
   return (
-    <group ref={outer} position={[spec.centre[0], spec.centre[1], restZ]}>
-      <mesh
-        ref={inner}
-        geometry={geometry}
-        castShadow
-        receiveShadow
-        onPointerOver={kick}
-        onPointerDown={kick}
+    <group ref={pivot} position={[pivotAt[0], pivotAt[1], 0]}>
+      <group
+        position={[spec.centre[0] - pivotAt[0], spec.centre[1] - pivotAt[1], 0]}
+        rotation={[0, 0, heading - Math.PI / 2]}
       >
-        {/* Warm yellow gold: satin body with pit-speckled roughness so it reads
-            as a heavy cast object, not a chrome balloon. */}
-        <meshStandardMaterial
-          color="#f6b64c"
-          metalness={1}
-          roughness={0.27}
-          roughnessMap={speckle}
-          bumpMap={speckle}
-          bumpScale={0.004}
-          envMapIntensity={envMapIntensity * 1.1}
-        />
-      </mesh>
+        <mesh geometry={cells.egg.gold} position={[0, 0, spec.goldZ]} receiveShadow>
+          <MetalMaterial metal="gold" />
+        </mesh>
+        <mesh
+          geometry={cells.egg.enamel}
+          position={[0, 0, cellEnamelZ(spec.goldZ)]}
+          receiveShadow
+          onPointerOver={kick}
+          onPointerDown={kick}
+        >
+          <CellMaterial color={EGG_COLOR} />
+        </mesh>
+        <mesh geometry={cells.shine.gold} position={[0, 0, SHINE_GOLD_Z]} receiveShadow>
+          <MetalMaterial metal="gold" />
+        </mesh>
+        <mesh geometry={cells.shine.enamel} position={[0, 0, cellEnamelZ(SHINE_GOLD_Z)]} receiveShadow>
+          <CellMaterial color={SHINE_COLOR} envScale={0.9} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+type Drop = { y: number; vy: number; delay: number; warm: number; landed: boolean };
+
+/**
+ * Both eggs together: on mount they drop in-plane from just above the nest
+ * and bounce once or twice into it, then never move again until hovered.
+ */
+function EggPair() {
+  const group = useRef<Group>(null);
+  const drop = useRef<Drop>({ y: DROP_HEIGHT, vy: 0, delay: REVEAL_DELAY, warm: 0, landed: false });
+
+  useFrame((_, rawDelta) => {
+    const d = drop.current;
+    const g = group.current;
+    if (!g) return;
+    const dt = Math.min(rawDelta, 1 / 30);
+
+    if (d.warm < WARMUP_FRAMES) {
+      d.warm = rawDelta < WARMUP_SMOOTH_DELTA ? d.warm + 1 : 0;
+    } else if (d.delay > 0) {
+      d.delay -= dt;
+    } else if (!d.landed) {
+      d.vy -= GRAVITY * dt;
+      d.y += d.vy * dt;
+      if (d.y <= 0) {
+        d.y = 0;
+        if (Math.abs(d.vy) < SETTLE_SPEED) {
+          d.vy = 0;
+          d.landed = true;
+          g.userData.landed = true;
+        } else {
+          d.vy = -d.vy * RESTITUTION;
+        }
+      }
+    }
+    g.position.y = d.y;
+  });
+
+  return (
+    <group ref={group} position={[0, DROP_HEIGHT, 0]}>
+      {EGGS.map((spec) => (
+        <Egg key={spec.heading} spec={spec} pair={group} />
+      ))}
     </group>
   );
 }
@@ -615,16 +636,14 @@ function Egg({ spec, restZ, speckle }: { spec: EggSpec; restZ: number; speckle: 
 /**
  * HUEVOS — "Held through it all." A wide oval hard-enamel pin in the
  * FLOWER BOY family: gold double-line rim, black band with raised gold
- * lettering, a thin inner ring, then a deep candy-glass field holding two
- * golden eggs in shallow dishes. The eggs are the hero: heavy, warm,
- * speckled, and they never crack.
+ * lettering, a thin inner ring, then a deep candy-glass field carrying a
+ * flat cloisonné graphic of two golden eggs nestled in a dish — every cell
+ * outlined in struck gold, the way the sunflower is drawn.
  */
 export function HuevosBadge() {
   const { enamelColor } = usePinMaterials();
-  const attenuation = useMemo(
-    () => new Color(enamelColor).offsetHSL(-0.01, 0.05, -0.1),
-    [enamelColor],
-  );
+  const attenuation = useMemo(() => new Color(enamelColor).offsetHSL(-0.01, 0.05, -0.1), [enamelColor]);
+  const fieldEmissive = useMemo(() => new Color(enamelColor).offsetHSL(0, 0, -0.12), [enamelColor]);
 
   const back = useMemo(() => ovalShape(0.025), []);
   const rim = useMemo(() => ovalShape(0, RIM_INNER), []);
@@ -636,7 +655,7 @@ export function HuevosBadge() {
   const fieldGeometry = useMemo(() => {
     // Signed distance to the ring's inner edge along the ellipse normal —
     // exact enough for a parallel curve this far from the foci.
-    const edge = (x: number, y: number) => {
+    const edge: EdgeDistance = (x, y) => {
       const theta = Math.atan2(y / B, x / A);
       const p = ellipseOffsetPoint(A, B, RING_INNER, theta);
       const nx = B * Math.cos(theta);
@@ -644,40 +663,16 @@ export function HuevosBadge() {
       const inv = 1 / Math.hypot(nx, ny);
       return (p.x - x) * nx * inv + (p.y - y) * ny * inv;
     };
-    const height = (x: number, y: number) => {
-      let h = FIELD_SHOULDER * smooth(edge(x, y) / 0.1);
-      for (const spec of EGGS) {
-        const r = dishRadius(spec, x, y);
-        h -= DISH_DEPTH * smooth(1 - r);
-      }
-      return h;
-    };
-    const geometry = displaceCap(buildResinSlab(ovalShape(RING_INNER - 0.005), FIELD_DEPTH, FIELD_BEVEL, 0.022), height);
-
-    // Tonal tint: deeper toward the wall and into the dishes where the glass
-    // is thickest, a touch lifted in the open field.
-    const position = geometry.attributes.position;
-    const colors = new Float32Array(position.count * 3);
-    const wallTint = [0.62, 0.78, 0.8];
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i);
-      const y = position.getY(i);
-      const wall = 1 - smooth(edge(x, y) / 0.1);
-      let dish = 0;
-      for (const spec of EGGS) dish = Math.max(dish, smooth(1 - dishRadius(spec, x, y)));
-      const dark = Math.max(wall, dish * 0.85);
-      const hot = (1 - dark) * 0.04;
-      colors[i * 3] = 1 + (wallTint[0] - 1) * dark + hot;
-      colors[i * 3 + 1] = 1 + (wallTint[1] - 1) * dark + hot;
-      colors[i * 3 + 2] = 1 + (wallTint[2] - 1) * dark + hot * 0.5;
-    }
-    geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
-    return geometry;
+    const geometry = pourResin(
+      buildResinSlab(ovalShape(RING_INNER - 0.005), FIELD_DEPTH, FIELD_BEVEL, 0.05),
+      edge,
+      FIELD_SHOULDER,
+      0.1,
+    );
+    return tintResin(geometry, edge, 0.1, [0.62, 0.78, 0.8], [0.04, 0.04, 0.02]);
   }, []);
 
-  const speckle = useMemo(() => buildSpeckleTexture(1337), []);
-  useEffect(() => () => speckle.dispose(), [speckle]);
-
+  const nest = useMemo(() => buildCell(nestShape(), NEST.depth * 2, NEST_TINT, 64), []);
   const bandText = useBandText();
 
   return (
@@ -695,26 +690,29 @@ export function HuevosBadge() {
       </mesh>
       <DetailPiece shape={ring} metal="gold" curveSegments={12} />
 
-      {/* Candy-glass field with two dishes sunk into it. */}
+      {/* Candy-glass field, meniscus rising against the ring. */}
       <mesh geometry={fieldGeometry} position={[0, 0, FIELD_Z]} receiveShadow>
         <CandyEnamelMaterial
           color={enamelColor}
           vertexColors
           attenuationColor={attenuation}
-          attenuationDistance={0.4}
-          thickness={0.85}
+          attenuationDistance={0.45}
+          thickness={0.7}
+          emissive={fieldEmissive}
+          emissiveIntensity={0.15}
         />
       </mesh>
 
-      {/* The golden eggs, each resting at the bottom of its dish. */}
-      {EGGS.map((spec) => (
-        <Egg
-          key={spec.seed}
-          spec={spec}
-          speckle={speckle}
-          restZ={FIELD_TOP - DISH_DEPTH + spec.width / 2 - 0.004}
-        />
-      ))}
+      {/* The nest: a dark chocolate dish in a fine gold wire, like the seed head. */}
+      <mesh geometry={nest.gold} position={[0, 0, NEST_GOLD_Z]} receiveShadow>
+        <MetalMaterial metal="gold" />
+      </mesh>
+      <mesh geometry={nest.enamel} position={[0, 0, cellEnamelZ(NEST_GOLD_Z)]} receiveShadow>
+        <CellMaterial color={NEST_COLOR} envScale={0.5} />
+      </mesh>
+
+      {/* The golden eggs. */}
+      <EggPair />
     </group>
   );
 }
