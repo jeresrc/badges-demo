@@ -26,6 +26,7 @@ import {
   polygonDistance,
   pourResin,
   rad,
+  smooth,
   tintResin,
 } from "./cloisonne";
 import type { EdgeDistance, Tint } from "./cloisonne";
@@ -407,9 +408,18 @@ function twigCentre(len: number, bend: number, t: number) {
   return new Vector2(u * len, bend * len * (1 - 4 * u * u));
 }
 
+/**
+ * How fast a twig closes to its ends, as a fraction of its length. Keeping the
+ * stick near full width along most of its span and tapering only over the last
+ * eighth is what separates a stick from a leaf — a sine profile carries far too
+ * much belly and the courses read as a pile of pods.
+ */
+const TWIG_TAPER = 0.13;
+
 /** Outline of one twig, pointing along +X and centred on the origin. */
-function twigOutline(len: number, halfWidth: number, bend: number, steps = 26): Vector2[] {
-  const width = (t: number) => halfWidth * Math.pow(Math.sin(Math.PI * t), 0.42) * (1 - 0.3 * (t - 0.5));
+function twigOutline(len: number, halfWidth: number, bend: number, steps = 32): Vector2[] {
+  const width = (t: number) =>
+    halfWidth * smooth(Math.min(t, 1 - t) / TWIG_TAPER) * (1 - 0.3 * (t - 0.5));
   const normal = (t: number) => {
     const a = twigCentre(len, bend, Math.max(0, t - 1e-3));
     const b = twigCentre(len, bend, Math.min(1, t + 1e-3));
