@@ -533,7 +533,7 @@ function arcRow(spec: RowSpec): Twig[] {
  * them, so the front row cuts across the eggs' blunt ends. */
 const NEST_TWIGS: Twig[] = [
   ...arcRow({
-    rx: 0.635, ry: 0.34, cy: -0.115, from: 176, to: 364, count: 11,
+    rx: 0.6, ry: 0.31, cy: -0.09, from: 188, to: 352, count: 12,
     templates: [0, 2, 1, 3], tones: [0, 1, 0, 2], z: NEST_BACK_Z[0], seed: 1,
   }),
   ...arcRow({
