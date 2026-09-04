@@ -99,7 +99,7 @@ export const POST_OVERRIDES: Partial<Record<BadgeVariant, PostOverrides>> = {
  * the panels as reflections in the metal and in the enamel's clearcoat.
  *
  * Two real spot lights sit on top of that to give directional, controllable
- * shading and shadows across the recessed enamel.
+ * shading across the recessed enamel without allocating shadow maps.
  */
 export function Studio({ spotIntensity, variant }: { spotIntensity: number; variant?: BadgeVariant }) {
   const rig: Rig = { ...DEFAULT_RIG, ...(variant ? RIGS[variant] : undefined) };

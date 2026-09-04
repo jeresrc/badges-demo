@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { PlaneGeometry } from "three";
 import { FilmMaterial, MetalMaterial, PaperMaterial, usePinMaterials } from "./materials";
 import { BackPlate, DetailPiece, EnamelPiece, RimPiece } from "./parts";
@@ -106,7 +106,7 @@ function foldHeight(x: number, y: number, fold: Fold) {
  * the constants above so a future unwrap interaction can animate them.
  */
 function useFilmGeometry(side: "front" | "back") {
-  return useMemo(() => {
+  const geometry = useMemo(() => {
     const geometry = new PlaneGeometry(BAG_WIDTH, BAG_HEIGHT, 160, 200);
     const position = geometry.attributes.position;
     const pouchHeight = side === "front" ? POUCH_HEIGHT_FRONT : POUCH_HEIGHT_BACK;
@@ -147,6 +147,10 @@ function useFilmGeometry(side: "front" | "back") {
     geometry.computeVertexNormals();
     return geometry;
   }, [side]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return geometry;
 }
 
 /** Small enamel charm with a silver keyring loop, sealed inside the pouch. */
@@ -164,11 +168,11 @@ function Charm() {
       <RimPiece shape={rim} metal="gold" />
       <EnamelPiece shape={field} color={enamelColor} />
       <DetailPiece shape={star} metal="gold" curveSegments={2} />
-      <mesh name="charm-loop" position={[0, 1.16, 0]} castShadow>
+      <mesh name="charm-loop" position={[0, 1.16, 0]}>
         <torusGeometry args={[0.2, 0.038, 24, 64]} />
         <MetalMaterial metal="silver" />
       </mesh>
-      <mesh name="charm-loop-post" position={[0, 0.99, 0]} castShadow>
+      <mesh name="charm-loop-post" position={[0, 0.99, 0]}>
         <cylinderGeometry args={[0.055, 0.055, 0.16, 24]} />
         <MetalMaterial metal="silver" />
       </mesh>
@@ -194,18 +198,20 @@ function HeaderCard() {
     });
   }, []);
 
+  useEffect(() => () => flapGeometry.dispose(), [flapGeometry]);
+
   // Slightly proud of the flap faces so the crease reads as folded paper.
   const foldRadius = CARD_GAP / 2 + CARD_THICKNESS / 2 + 0.004;
 
   return (
     <group name="header-card" position={[0, CARD_FOLD_Y, 0]}>
       <group name="header-card-front" position={[0, 0, CARD_GAP / 2]}>
-        <mesh geometry={flapGeometry} position={[0, -CARD_HEIGHT / 2, 0]} castShadow>
+        <mesh geometry={flapGeometry} position={[0, -CARD_HEIGHT / 2, 0]}>
           <PaperMaterial color={CARD_COLOR} />
         </mesh>
       </group>
       <group name="header-card-back" position={[0, 0, -CARD_GAP / 2]}>
-        <mesh geometry={flapGeometry} position={[0, -CARD_HEIGHT / 2, 0]} castShadow>
+        <mesh geometry={flapGeometry} position={[0, -CARD_HEIGHT / 2, 0]}>
           <PaperMaterial color={CARD_COLOR} />
         </mesh>
       </group>
@@ -243,6 +249,8 @@ export function Packaged() {
       }),
     [],
   );
+
+  useEffect(() => () => stickerGeometry.dispose(), [stickerGeometry]);
 
   return (
     <group name="package" position={[0, -0.04, 0]}>

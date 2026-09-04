@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { ColorRepresentation, Shape } from "three";
 import { CandyEnamelMaterial, EnamelMaterial, MetalMaterial } from "./materials";
 import type { MetalKind } from "./materials";
@@ -29,17 +29,21 @@ function useExtruded(
   bevel: number,
   curveSegments: number,
 ) {
-  return useMemo(
+  const geometry = useMemo(
     () => extrudeCentered(shape, { depth, bevel, curveSegments }),
     [shape, depth, bevel, curveSegments],
   );
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  return geometry;
 }
 
 /** Outer wall of the pin: full thickness, bevelled on both faces. */
 export function RimPiece({ shape, metal, curveSegments = 96 }: PieceProps & { metal: MetalKind }) {
   const geometry = useExtruded(shape, RIM_DEPTH, RIM_BEVEL, curveSegments);
   return (
-    <mesh geometry={geometry} castShadow receiveShadow>
+    <mesh geometry={geometry}>
       <MetalMaterial metal={metal} />
     </mesh>
   );
@@ -62,7 +66,7 @@ export function DetailPiece({
   const geometry = useExtruded(shape, depth, DETAIL_BEVEL, curveSegments);
   const zPos = z ?? RIM_DEPTH / 2 - depth / 2;
   return (
-    <mesh geometry={geometry} position={[offset[0], offset[1], zPos]} castShadow receiveShadow>
+    <mesh geometry={geometry} position={[offset[0], offset[1], zPos]}>
       <MetalMaterial metal={metal} />
     </mesh>
   );
@@ -78,7 +82,7 @@ export function EnamelPiece({
 }: PieceProps & { color: ColorRepresentation; z?: number; candy?: boolean }) {
   const geometry = useExtruded(shape, ENAMEL_DEPTH, ENAMEL_BEVEL, curveSegments);
   return (
-    <mesh geometry={geometry} position={[0, 0, z]} receiveShadow>
+    <mesh geometry={geometry} position={[0, 0, z]}>
       {candy ? <CandyEnamelMaterial color={color} /> : <EnamelMaterial color={color} />}
     </mesh>
   );
@@ -88,7 +92,7 @@ export function EnamelPiece({
 export function BackPlate({ shape, metal, curveSegments = 96 }: PieceProps & { metal: MetalKind }) {
   const geometry = useExtruded(shape, BACK_DEPTH, BACK_BEVEL, curveSegments);
   return (
-    <mesh geometry={geometry} position={[0, 0, BACK_Z]} castShadow receiveShadow>
+    <mesh geometry={geometry} position={[0, 0, BACK_Z]}>
       <MetalMaterial metal={metal} />
     </mesh>
   );
