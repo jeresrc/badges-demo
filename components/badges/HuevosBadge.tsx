@@ -139,23 +139,27 @@ type EggSpec = {
 const EGGS: EggSpec[] = [
   // Front egg: a touch larger, leaning left.
   {
-    length: 0.7,
-    width: 0.52,
-    centre: [-0.18, 0.06],
+    length: 0.72,
+    width: 0.55,
+    centre: [-0.17, 0.05],
     heading: 100,
     goldZ: FRONT_EGG_GOLD_Z,
     shine: { at: [-0.22, 0.2], size: [0.06, 0.13], tilt: 22 },
   },
   // Back egg: tucked behind the first, leaning right.
   {
-    length: 0.64,
-    width: 0.48,
-    centre: [0.23, 0.04],
+    length: 0.68,
+    width: 0.51,
+    centre: [0.23, 0.035],
     heading: 78,
     goldZ: BACK_EGG_GOLD_Z,
     shine: { at: [-0.08, 0.27], size: [0.05, 0.11], tilt: 20 },
   },
 ];
+
+/* Sized so that even at full hover rock (MAX_ROCK about the blunt end) the
+ * pointed end stays clear of the inner wire — the eggs reach for the ring the
+ * way the sunflower's petals do without ever crossing it. */
 
 /** Egg profile: widest a little below the middle, closing to a narrower top. */
 const EGG_TAPER = 0.17;
@@ -519,23 +523,23 @@ function arcRow(spec: RowSpec): Twig[] {
  * them, so the front row cuts across the eggs' blunt ends. */
 const NEST_TWIGS: Twig[] = [
   ...arcRow({
-    rx: 0.63, ry: 0.315, cy: -0.115, from: 176, to: 364, count: 11,
+    rx: 0.635, ry: 0.34, cy: -0.115, from: 176, to: 364, count: 11,
     templates: [0, 2, 1, 3], tones: [0, 1, 0, 2], z: NEST_BACK_Z[0], seed: 1,
   }),
   ...arcRow({
-    rx: 0.565, ry: 0.26, cy: -0.115, from: 182, to: 358, count: 10,
+    rx: 0.575, ry: 0.285, cy: -0.105, from: 182, to: 358, count: 10,
     templates: [1, 3, 0, 2], tones: [1, 0, 2, 1], z: NEST_BACK_Z[1], seed: 2,
   }),
   ...arcRow({
-    rx: 0.5, ry: 0.2, cy: -0.115, from: 190, to: 350, count: 9,
+    rx: 0.505, ry: 0.215, cy: -0.1, from: 190, to: 350, count: 9,
     templates: [2, 4, 1, 3], tones: [0, 2, 1, 0], z: NEST_BACK_Z[1], seed: 3,
   }),
   ...arcRow({
-    rx: 0.575, ry: 0.15, cy: -0.03, from: 182, to: 358, count: 10,
+    rx: 0.58, ry: 0.155, cy: -0.02, from: 182, to: 358, count: 10,
     templates: [0, 2, 1, 3], tones: [2, 1, 0, 1], z: NEST_FRONT_Z[0], seed: 4,
   }),
   ...arcRow({
-    rx: 0.545, ry: 0.225, cy: -0.03, from: 190, to: 350, count: 10,
+    rx: 0.55, ry: 0.245, cy: -0.015, from: 190, to: 350, count: 10,
     templates: [1, 2, 0, 3], tones: [1, 2, 0, 2], z: NEST_FRONT_Z[1], seed: 5,
   }),
   /* Loose ends: a few sticks left standing out of the rim on the flanks, the
@@ -543,12 +547,14 @@ const NEST_TWIGS: Twig[] = [
    * the oval's wide upper corners, which the bowl alone leaves empty. */
   ...(
     [
-      { template: 2, x: -0.55, y: -0.03, angle: rad(62), tone: 1, z: NEST_BACK_Z[0] },
-      { template: 3, x: -0.47, y: 0.08, angle: rad(36), tone: 2, z: NEST_BACK_Z[1] },
-      { template: 4, x: -0.63, y: -0.14, angle: rad(24), tone: 0, z: NEST_FRONT_Z[0] },
-      { template: 2, x: 0.61, y: -0.05, angle: rad(118), tone: 0, z: NEST_BACK_Z[0] },
-      { template: 3, x: 0.52, y: 0.08, angle: rad(146), tone: 1, z: NEST_BACK_Z[1] },
-      { template: 4, x: 0.67, y: -0.15, angle: rad(158), tone: 2, z: NEST_FRONT_Z[0] },
+      { template: 2, x: -0.56, y: -0.02, angle: rad(64), tone: 1, z: NEST_BACK_Z[0] },
+      { template: 3, x: -0.5, y: 0.11, angle: rad(44), tone: 2, z: NEST_BACK_Z[1] },
+      { template: 4, x: -0.4, y: 0.2, angle: rad(28), tone: 1, z: NEST_BACK_Z[0] },
+      { template: 4, x: -0.64, y: -0.14, angle: rad(22), tone: 0, z: NEST_FRONT_Z[0] },
+      { template: 2, x: 0.62, y: -0.04, angle: rad(116), tone: 0, z: NEST_BACK_Z[0] },
+      { template: 3, x: 0.555, y: 0.11, angle: rad(138), tone: 1, z: NEST_BACK_Z[1] },
+      { template: 4, x: 0.45, y: 0.21, angle: rad(154), tone: 2, z: NEST_BACK_Z[0] },
+      { template: 4, x: 0.68, y: -0.15, angle: rad(160), tone: 2, z: NEST_FRONT_Z[0] },
     ] as Twig[]
   )
     .map(fitTwig)
@@ -560,8 +566,8 @@ function bowlShape(): Shape {
   return polygonShape(
     clampToField(
       [
-        ...ellipseArcPoints(NEST_CX, -0.055, 0.545, 0.14, 184, 356, 48),
-        ...ellipseArcPoints(NEST_CX, -0.105, 0.615, 0.32, 356, 184, 48),
+        ...ellipseArcPoints(NEST_CX, -0.045, 0.55, 0.145, 184, 356, 48),
+        ...ellipseArcPoints(NEST_CX, -0.105, 0.62, 0.35, 356, 184, 48),
       ],
       CELL_OUTLINE + FIELD_MARGIN,
     ),
